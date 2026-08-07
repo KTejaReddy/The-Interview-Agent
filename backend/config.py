@@ -69,6 +69,20 @@ class Settings:
     llm_provider: str = os.getenv("LLM_PROVIDER", "groq")
     llm_base_url: str = os.getenv("GROQ_BASE_URL", os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1"))
     llm_model: str = os.getenv("GROQ_MODEL", os.getenv("LLM_MODEL", "llama-3.3-70b-versatile"))
+    llm_fallback_models: list[str] = field(
+        default_factory=lambda: _env_list(
+            "LLM_FALLBACK_MODELS",
+            [
+                "groq/compound",
+                "groq/compound-mini",
+                "qwen/qwen3-27b",
+                "openai/gpt-oss-120b",
+                "openai/gpt-oss-20b",
+                "llama-3.1-8b-instant",
+                "allam-2-7b",
+            ],
+        )
+    )
     llm_api_key: str = os.getenv("GROQ_API_KEY", os.getenv("LLM_API_KEY", ""))
     llm_temperature: float = float(os.getenv("LLM_TEMPERATURE", "0.7"))
     llm_max_tokens: int = int(os.getenv("LLM_MAX_TOKENS", "800"))

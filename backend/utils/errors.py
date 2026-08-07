@@ -77,6 +77,13 @@ class LLMError(AppError):
     code = "llm_error"
 
 
+class LLMUnavailableError(AppError):
+    """All configured LLM fallback models failed or were rate limited."""
+
+    status_code = 503
+    code = "llm_unavailable"
+
+
 class InvalidStateTransitionError(AppError):
     """An illegal state-machine transition was attempted."""
 

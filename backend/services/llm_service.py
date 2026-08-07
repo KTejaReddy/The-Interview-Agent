@@ -15,6 +15,7 @@ repairs malformed JSON once and retries before giving up.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from abc import ABC, abstractmethod
@@ -24,7 +25,8 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from config import Settings
-from utils.errors import LLMError, LLMNotConfiguredError
+from utils.context import current_session
+from utils.errors import LLMError, LLMNotConfiguredError, LLMUnavailableError
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -54,6 +56,7 @@ class LLMProvider(ABC):
     async def complete(
         self,
         *,
+        model: str,
         system: str,
         user: str,
         temperature: float,
@@ -80,6 +83,7 @@ class OpenAICompatibleProvider(LLMProvider):
     async def complete(
         self,
         *,
+        model: str,
         system: str,
         user: str,
         temperature: float,
@@ -92,7 +96,7 @@ class OpenAICompatibleProvider(LLMProvider):
                 "(see .env.example) or enable LLM_MOCK_MODE for demos."
             )
         payload: dict[str, Any] = {
-            "model": self._settings.llm_model,
+            "model": model,
             "temperature": temperature,
             "max_tokens": max_tokens,
             "messages": [
@@ -138,6 +142,7 @@ class MockProvider(LLMProvider):
     async def complete(
         self,
         *,
+        model: str,
         system: str,
         user: str,
         temperature: float,
@@ -238,11 +243,7 @@ class LLMService:
         user_prompt: str,
         schema: type[T],
     ) -> T:
-        """Ask the model for JSON and return a validated Pydantic instance.
-
-        Retries once with a repair instruction if the output does not
-        validate against ``schema``.
-        """
+        """Ask the model for JSON and return a validated Pydantic instance."""
         if not self.configured:
             raise LLMNotConfiguredError(
                 "No LLM provider is configured. Set LLM_API_KEY in "
@@ -254,41 +255,78 @@ class LLMService:
             "markdown, no commentary."
         )
 
-        attempts = 0
+        session = current_session.get()
+        primary_model = session.llm_model if session and session.llm_model else self._settings.llm_model
+        
+        candidates = [primary_model]
+        for m in self._settings.llm_fallback_models:
+            if m not in candidates:
+                candidates.append(m)
+
+        disallowed = {
+            "meta-llama/llama-prompt-guard-2-22m",
+            "meta-llama/llama-prompt-guard-2-86m",
+            "openai/gpt-oss-safeguard-20b"
+        }
+        candidates = [m for m in candidates if m not in disallowed]
+
         last_error: Exception | None = None
-        while attempts < 2:
-            attempts += 1
-            try:
-                raw = await self._provider.complete(
-                    system=system,
-                    user=user_prompt,
-                    temperature=self._settings.llm_temperature,
-                    max_tokens=self._settings.llm_max_tokens,
-                    timeout=self._settings.llm_timeout_seconds,
-                )
-            except LLMNotConfiguredError:
-                raise
-            except LLMError as exc:
-                last_error = exc
-                logger.error("LLM completion failed (attempt %d): %s", attempts, exc)
-                break
-
-            try:
-                payload = json.loads(_extract_json(raw))
-                return schema.model_validate(payload)
-            except (json.JSONDecodeError, ValidationError) as exc:
-                last_error = exc
-                logger.warning(
-                    "LLM JSON failed validation (attempt %d): %s", attempts, exc
-                )
-                if attempts == 1:
-                    user_prompt = (
-                        f"Your previous reply was not valid JSON matching the "
-                        f"required schema. Fix it. Required fields:\n"
-                        f"{schema.model_json_schema()}\n\nOriginal request:\n"
-                        f"{user_prompt}"
+        
+        for model in candidates:
+            attempts = 0
+            prompt_to_send = user_prompt 
+            
+            while attempts < 4:
+                attempts += 1
+                try:
+                    raw = await self._provider.complete(
+                        model=model,
+                        system=system,
+                        user=prompt_to_send,
+                        temperature=self._settings.llm_temperature,
+                        max_tokens=self._settings.llm_max_tokens,
+                        timeout=self._settings.llm_timeout_seconds,
                     )
+                except LLMNotConfiguredError:
+                    raise
+                except LLMError as exc:
+                    last_error = exc
+                    exc_str = str(exc).lower()
+                    is_retryable = any(kw in exc_str for kw in ["429", "capacity", "timeout", "rate limit", "503"])
+                    if is_retryable and attempts < 4:
+                        delay = [1, 2, 4][attempts - 1]
+                        logger.warning("Retryable error on %s (attempt %d). Sleeping %ds: %s", model, attempts, delay, exc)
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        logger.error("Model %s failed (attempt %d): %s", model, attempts, exc)
+                        break
 
-        raise LLMError(
-            f"Could not obtain valid structured output from the LLM: {last_error}"
-        )
+                try:
+                    payload = json.loads(_extract_json(raw))
+                    result = schema.model_validate(payload)
+                    
+                    if session and session.llm_model != model:
+                        logger.info("Session fallback: switching to %s (was %s)", model, session.llm_model)
+                        session.llm_model = model
+                        
+                    return result
+                except (json.JSONDecodeError, ValidationError) as exc:
+                    last_error = exc
+                    logger.warning("JSON validation failed on %s (attempt %d): %s", model, attempts, exc)
+                    if attempts < 4:
+                        prompt_to_send = (
+                            f"Your previous reply was not valid JSON matching the "
+                            f"required schema. Fix it. Required fields:\n"
+                            f"{schema.model_json_schema()}\n\nOriginal request:\n"
+                            f"{user_prompt}"
+                        )
+                        continue
+                    else:
+                        break
+
+            if model != candidates[-1]:
+                logger.info("Fallback triggered: moving from %s to next model.", model)
+
+        logger.error("All LLM fallback models failed. Last error: %s", last_error)
+        raise LLMUnavailableError("The AI service is temporarily unavailable. Please try again in a moment.")

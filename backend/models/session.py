@@ -43,6 +43,7 @@ class InterviewSession:
     current_difficulty: Difficulty = Difficulty.MEDIUM
     feedback: FeedbackResult | None = None
     transcript: list[dict] = field(default_factory=list)  # [{role, text}]
+    llm_model: str | None = None         # Currently selected LLM model for this session
     created_at: datetime = field(default_factory=_now)
     updated_at: datetime = field(default_factory=_now)
 

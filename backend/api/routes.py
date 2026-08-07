@@ -20,6 +20,7 @@ from schemas.api import (
     SessionSnapshot,
 )
 from services.session_manager import SessionManager
+from utils.context import current_session
 from utils.errors import DatasetUnavailableError, SessionCandidateMismatchError
 from utils.logging import get_logger
 
@@ -58,6 +59,7 @@ async def post_interview(
                 },
             )
 
+    current_session.set(session)
     result = await manager.handle_message(session, payload.message)
     return InterviewResponse(**result.to_api())
 
