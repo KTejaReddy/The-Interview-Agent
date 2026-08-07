@@ -1,0 +1,58 @@
+{
+  "days": [
+    {
+      "id": 1,
+      "title": "Python Fundamentals",
+      "module": "Programming Basics",
+      "objectives": ["Write and run Python scripts", "Understand data types and control flow"],
+      "tools": ["Python 3", "VS Code"],
+      "learning_goals": ["Confidently use variables, conditionals and loops"],
+      "topics": ["python-variables", "python-conditionals", "python-loops"]
+    },
+    {
+      "id": 2,
+      "title": "Object-Oriented Programming",
+      "module": "Core Concepts",
+      "objectives": ["Model problems with classes", "Apply inheritance and polymorphism"],
+      "tools": ["Python 3"],
+      "learning_goals": ["Design small OO systems"],
+      "topics": ["oops-classes", "oops-inheritance", "oops-polymorphism"]
+    },
+    {
+      "id": 3,
+      "title": "Data Structures & Algorithms",
+      "module": "Core Concepts",
+      "objectives": ["Analyze complexity", "Implement core structures"],
+      "tools": ["Python 3", "pytest"],
+      "learning_goals": ["Solve problems with the right structure"],
+      "topics": ["dsa-arrays", "dsa-linked-lists", "dsa-complexity"]
+    },
+    {
+      "id": 4,
+      "title": "Databases",
+      "module": "Data Layer",
+      "objectives": ["Model relational schemas", "Write correct SQL"],
+      "tools": ["PostgreSQL"],
+      "learning_goals": ["Design normalized schemas"],
+      "topics": ["db-sql", "db-normalization", "db-indexes"]
+    },
+    {
+      "id": 5,
+      "title": "Web Development",
+      "module": "Application Layer",
+      "objectives": ["Build HTTP APIs", "Handle requests and responses"],
+      "tools": ["FastAPI", "REST"],
+      "learning_goals": ["Ship a small API service"],
+      "topics": ["web-rest", "web-http", "web-api-design"]
+    },
+    {
+      "id": 6,
+      "title": "Deployment & Production",
+      "module": "Operations",
+      "objectives": ["Containerize services", "Deploy safely"],
+      "tools": ["Docker", "CI/CD"],
+      "learning_goals": ["Deploy a service with monitoring"],
+      "topics": ["prod-docker", "prod-ci-cd", "prod-monitoring"]
+    }
+  ]
+}

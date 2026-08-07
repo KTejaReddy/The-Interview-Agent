@@ -1,0 +1,157 @@
+"""Conversation memory.
+
+Stores every question, answer and evaluation for the entire session and
+derives aggregate signals: topics covered, days covered, mistakes, strong
+answers and a running question counter.  Nothing is pruned until the
+session itself expires, so the memory is complete from START to DONE.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+
+from models.enums import Difficulty, FollowUpStrategy, QuestionType, Verdict
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+@dataclass
+class TurnRecord:
+    """One conversational exchange between interviewer and candidate."""
+
+    turn: int
+    question: str
+    topic: str
+    day_index: int
+    question_type: QuestionType
+    difficulty: Difficulty
+    answer: str
+    score: int = 0
+    verdict: Verdict = Verdict.UNCLEAR
+    follow_up: FollowUpStrategy = FollowUpStrategy.NEXT_TOPIC
+    notes: str = ""
+    is_follow_up: bool = False
+    timestamp: datetime = field(default_factory=_now)
+
+    def to_dict(self) -> dict:
+        return {
+            "turn": self.turn,
+            "question": self.question,
+            "topic": self.topic,
+            "day_index": self.day_index,
+            "question_type": self.question_type.value,
+            "difficulty": self.difficulty.value,
+            "answer": self.answer,
+            "score": self.score,
+            "verdict": self.verdict.value,
+            "follow_up": self.follow_up.value,
+            "is_follow_up": self.is_follow_up,
+        }
+
+
+class ConversationMemory:
+    """Complete, session-scoped record of the interview."""
+
+    def __init__(self, max_history_turns: int = 12) -> None:
+        self._turns: list[TurnRecord] = []
+        self._max_history_turns = max_history_turns
+
+    # --- writers ---------------------------------------------------------
+
+    def add_turn(
+        self,
+        question: str,
+        topic: str,
+        day_index: int,
+        question_type: QuestionType,
+        difficulty: Difficulty,
+        answer: str,
+        score: int,
+        verdict: Verdict,
+        follow_up: FollowUpStrategy,
+        notes: str = "",
+        is_follow_up: bool = False,
+    ) -> TurnRecord:
+        record = TurnRecord(
+            turn=len(self._turns) + 1,
+            question=question,
+            topic=topic,
+            day_index=day_index,
+            question_type=question_type,
+            difficulty=difficulty,
+            answer=answer,
+            score=score,
+            verdict=verdict,
+            follow_up=follow_up,
+            notes=notes,
+            is_follow_up=is_follow_up,
+        )
+        self._turns.append(record)
+        return record
+
+    # --- readers ---------------------------------------------------------
+
+    @property
+    def all_turns(self) -> list[TurnRecord]:
+        return list(self._turns)
+
+    @property
+    def count(self) -> int:
+        return len(self._turns)
+
+    def recent_turns(self, limit: int | None = None) -> list[TurnRecord]:
+        limit = limit or self._max_history_turns
+        return self._turns[-limit:]
+
+    def last(self) -> TurnRecord | None:
+        return self._turns[-1] if self._turns else None
+
+    @property
+    def topics_covered(self) -> list[str]:
+        return list(dict.fromkeys(turn.topic for turn in self._turns))
+
+    @property
+    def days_covered(self) -> list[int]:
+        return list(dict.fromkeys(turn.day_index for turn in self._turns))
+
+    @property
+    def mistakes(self) -> list[TurnRecord]:
+        return [
+            turn for turn in self._turns
+            if turn.verdict in (Verdict.WRONG, Verdict.WEAK)
+        ]
+
+    @property
+    def strong_answers(self) -> list[TurnRecord]:
+        return [
+            turn for turn in self._turns
+            if turn.verdict in (Verdict.GOOD, Verdict.EXCELLENT)
+        ]
+
+    @property
+    def average_score(self) -> float:
+        if not self._turns:
+            return 0.0
+        return sum(turn.score for turn in self._turns) / len(self._turns)
+
+    @property
+    def estimated_confidence(self) -> float:
+        """0..1 derived from answer scores (10-point scale)."""
+        return max(0.0, min(1.0, self.average_score / 10.0))
+
+    def format_transcript(self, limit: int | None = None) -> str:
+        """Compact interview log used to ground feedback generation."""
+        lines: list[str] = []
+        for turn in self.recent_turns(limit):
+            lines.append(
+                f"[Q{turn.turn}{' (follow-up)' if turn.is_follow_up else ''} | "
+                f"{turn.difficulty.value} | {turn.question_type.value}] {turn.topic}"
+            )
+            lines.append(f"  Interviewer: {turn.question}")
+            lines.append(f"  Candidate:   {turn.answer}")
+            lines.append(
+                f"  Evaluated:   score={turn.score}/10 verdict={turn.verdict.value}"
+            )
+        return "\n".join(lines)

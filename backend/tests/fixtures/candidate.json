@@ -1,0 +1,38 @@
+{
+  "candidates": [
+    {
+      "id": "candidate-1",
+      "name": "Alex Doe",
+      "role": "Junior Python Developer",
+      "experience": 1.5,
+      "education": "B.Sc. Computer Science",
+      "missions": [
+        {"topic": "python-loops", "status": "passed", "attempts": 1},
+        {"topic": "python-variables", "status": "passed", "attempts": 1},
+        {"topic": "oops-classes", "status": "failed", "attempts": 3},
+        {"topic": "dsa-complexity", "status": "skipped", "attempts": 0}
+      ],
+      "passed": ["python-basics"],
+      "failed": ["oops-concepts"],
+      "skipped": ["algorithms"],
+      "signals": {
+        "python-basics": ["strong", "passed"],
+        "oops-concepts": ["weak", "failed"]
+      }
+    },
+    {
+      "id": "candidate-2",
+      "name": "Priya Sharma",
+      "role": "Senior Backend Engineer",
+      "experience": 7,
+      "education": "M.Tech Software Engineering",
+      "missions": [
+        {"topic": "db-normalization", "status": "passed", "attempts": 1},
+        {"topic": "web-api-design", "status": "passed", "attempts": 1},
+        {"topic": "prod-docker", "status": "passed", "attempts": 1}
+      ],
+      "passed": ["db-sql"],
+      "skipped": ["prod-monitoring"]
+    }
+  ]
+}
