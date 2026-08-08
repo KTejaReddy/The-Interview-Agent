@@ -35,6 +35,13 @@ T = TypeVar("T", bound=BaseModel)
 
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 
+#: Words that never make a mention relevant to a question concept.
+_STOPWORDISH = {
+    "the", "and", "with", "for", "you", "your", "that", "this", "what",
+    "how", "when", "where", "why", "from", "into", "about", "using",
+    "build", "create", "learn", "understand", "explain", "setup", "work",
+}
+
 
 def _extract_json(text: str) -> str:
     """Extract the JSON object from a completion, tolerating fences/extra text."""
@@ -285,14 +292,29 @@ class MockProvider(LLMProvider):
         ]
         covered = len(topics)
 
-        strengths = [
-            f"Showed a working understanding of {t} when explaining it during the interview"
-            for t in strong_topics
-        ] or ["Engaged with every question the interviewer asked"]
+        if strong_topics:
+            strengths = [
+                f"Showed a working understanding of {t} when explaining it during the interview"
+                for t in strong_topics
+            ]
+        else:
+            # No demonstrated strengths.  The feedback schema requires at
+            # least one strength, so give a truthful, non-knowledge item —
+            # never a false competence claim nor a misleading "Engaged with
+            # every question" when the answers were "I don't know".
+            partials = [
+                t for t, status, _f, _w, _b in topics
+                if status == "partially_demonstrated"
+            ]
+            strengths = (
+                [f"Showed partial understanding of {partials[0]} — room to go deeper"]
+                if partials
+                else ["Responded consistently to every question asked during the interview"]
+            )
         gaps = [
             f"Did not demonstrate sufficient understanding of {t} during the interview"
             for t in weak_topics
-        ] or ["Deeper exploration of the concepts covered would be valuable"]
+        ] or ["No significant technical gaps surfaced during the interview"]
         next_steps = [
             f"Review the curriculum material and exercises for {t}"
             for t in (weak_topics[:2] or strong_topics[:1] or ["the topics covered"])
@@ -332,10 +354,11 @@ class MockProvider(LLMProvider):
         """Concept-grounded question text for each cognitive task.  The
         concept comes from the curriculum's own learning objective, so the
         mock never produces \"What is <Day title>?\" questions.  Questions
-        stay short and conversational (one idea, no multi-part phrasing)
-        and never open with a repetitive \"You mentioned X earlier\" prefix
-        — the real LLM still receives the mentions and may use them
-        naturally, but the mock does not force them onto every question."""
+        stay short and conversational (one idea, no multi-part phrasing).
+        Roughly one in four questions may open with a natural reference to a
+        curriculum concept the candidate raised earlier (context retention)
+        — never on every question, and only when the candidate actually
+        mentioned it."""
         from utils.concepts import action_phrase_from_objective
 
         concept = self._concept_from(user)
@@ -346,11 +369,41 @@ class MockProvider(LLMProvider):
         position = re.search(r"question (\d+) of", user)
         n = int(position.group(1)) if position else 0
 
+        # Context retention: occasionally build on a concept the candidate
+        # raised earlier, in their own words — but at most ~1 in 4 questions
+        # (so it never becomes a repetitive "You mentioned X earlier" opener)
+        # AND only when the mention is actually relevant to THIS question's
+        # concept (a human only references what connects to the topic).
+        mention_prefix = ""
+        mention_match = re.search(r"- Candidate mentioned earlier: (.+)$", user, re.MULTILINE)
+        if mention_match and n % 4 == 1:
+            mentions = [
+                m.strip()
+                for m in mention_match.group(1).split(",")
+                if m.strip() and m.strip() != "none yet"
+            ]
+            if mentions:
+                # Relevance gate: the mention must share a meaningful token
+                # with the question's concept/objective, or the prefix would
+                # be a non-sequitur ("You mentioned Docker" -> embeddings).
+                relevance_haystack = f"{concept} {objective}".lower()
+                chosen = None
+                for mention in mentions:
+                    tokens = [
+                        w for w in mention.lower().split()
+                        if len(w) >= 4 and w not in _STOPWORDISH
+                    ]
+                    if any(token in relevance_haystack for token in tokens):
+                        chosen = mention
+                        break
+                if chosen:
+                    mention_prefix = f"You mentioned {chosen} earlier — "
+
         # Rotate phrasings so consecutive questions on the same day still
         # read differently.
         conceptual_variants = (
             f"Can you explain {concept} — and why it matters?",
-            f"Walk me through {concept}: what are the key decisions?",
+            f"Walk me through {concept}.",
             f"How would you explain {concept} to a teammate who just joined?",
         )
         templates = {
@@ -392,7 +445,7 @@ class MockProvider(LLMProvider):
         question = templates.get(qtype, templates["conceptual"])
 
         return {
-            "question": question,
+            "question": f"{mention_prefix}{question}",
             "topic": topic,
             "intent": f"Assess the learning objective behind '{concept}'.",
             "question_type": qtype,
@@ -405,7 +458,9 @@ class MockProvider(LLMProvider):
         so strong candidates get a ladder, never a main→example→mistake
         bundle.  Activity-style templates use the gerund action phrase and
         explanation-style ones the "how …" concept — so a template can never
-        produce "How does how to build X fit…?"."""
+        produce "How does how to build X fit…?".  The "what's the core job
+        of X" template is banned: simplifications are concept-grounded and
+        rotated so they never read as a script."""
         from utils.concepts import action_phrase_from_objective
 
         strategy_match = re.search(r"- Follow-up strategy: (\w+)", user)
@@ -423,9 +478,15 @@ class MockProvider(LLMProvider):
         count_match = re.search(r"- Follow-ups so far on this topic: (\d+)", user)
         count = int(count_match.group(1)) if count_match else 0
 
+        # Rotation seed derived from the concept itself, so consecutive
+        # topics open with DIFFERENT phrasings (the per-topic count is 0 for
+        # every first follow-up, which is why the old opener repeated).
+        seed = sum(ord(ch) for ch in concept) if concept else count
+
         # Short, rotating acknowledgements so the same stock phrase is never
         # repeated ("Glad to hear it…", "No problem — let's ground this
-        # differently…" are banned).
+        # differently…", "Let's try a simpler angle…" on every turn are
+        # banned).
         openers = {
             "deeper": (
                 "Good — let's go one level deeper. ",
@@ -433,9 +494,10 @@ class MockProvider(LLMProvider):
                 "Exactly. Next angle: ",
             ),
             "simplify": (
-                "Let's try a simpler angle. ",
-                "Okay, let's come at it from the basics. ",
-                "Let's make this easier. ",
+                "Okay, let's make that easier. ",
+                "Let's try this from a different direction. ",
+                "No worries, let's start simpler. ",
+                "Let's break it down a bit. ",
             ),
             "recovery": (
                 "Let's step back for a second. ",
@@ -448,7 +510,8 @@ class MockProvider(LLMProvider):
             ),
             "probe": ("", ""),
         }
-        opener = openers.get(strategy, openers["deeper"])[count % len(openers.get(strategy, openers["deeper"]))]
+        pool = openers.get(strategy, openers["deeper"])
+        opener = pool[(seed + count) % len(pool)]
 
         # Escalating ladder for strong answers (never repeats an angle).
         deeper_ladder = (
@@ -460,9 +523,17 @@ class MockProvider(LLMProvider):
             f"monitor in production?",
         )
 
+        # Concept-grounded simplifications — never "what's the core job of X".
+        simplify_variants = (
+            f"What would {action} look like in practice?",
+            f"Let's break it down: what does {action} actually involve?",
+            f"Can you walk me through {action} from the very first step?",
+            f"What's the simplest way to think about {action}?",
+        )
+
         templates = {
             "deeper": opener + deeper_ladder[min(count, len(deeper_ladder) - 1)],
-            "simplify": opener + f"In one sentence, what's the core job of {action}?",
+            "simplify": opener + simplify_variants[(seed + count) % len(simplify_variants)],
             "recovery": opener + f"How would you explain {concept} to a junior teammate?",
             "verify": opener + f"Walk me through {concept} with a concrete example.",
             "probe": f"You said \"{snippet}\" — could you expand on that?",

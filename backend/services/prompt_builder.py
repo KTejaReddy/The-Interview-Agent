@@ -244,8 +244,86 @@ class PromptBuilder:
             first_name=first_name, question=question
         )
 
-    def next_question_bridge(self, question: str, previous_topic: str = "", next_topic: str = "") -> str:
-        return self._messages["next_question_bridge"].format(question=question)
+    # --- conversational bridge between main questions ---------------------
+    #
+    # The deterministic bridge owns ALL spoken transitions: a short reaction
+    # to the previous answer (keyed by its verdict) plus a rotated transition
+    # into the next topic.  The LLM is instructed to ask only the pure
+    # question, so transitions are consistent, varied and never doubled.
+    # Wording lives in messages.md rotation pools; this method only composes.
+
+    def _pool(self, name: str) -> list[str]:
+        """Rotation-pool entries: non-empty lines of a messages.md section.
+
+        Comment lines ("# ...") are skipped defensively so a stray comment
+        between sections can never leak into the interviewer's reply.
+        """
+        raw = self._messages.get(name, "")
+        return [
+            line.strip()
+            for line in raw.splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+
+    def _reaction_for(self, verdict: str | None, index: int) -> str:
+        """Short human reaction to the previous answer, rotated by turn."""
+        if verdict is None:
+            return ""
+        verdict = verdict.lower()
+        if verdict in ("good", "excellent"):
+            pool = self._pool("reaction_good")
+        elif verdict == "weak":
+            pool = self._pool("reaction_weak")
+        elif verdict == "wrong":
+            pool = self._pool("reaction_wrong")
+        elif verdict == "unclear":
+            pool = self._pool("reaction_claim")
+        else:
+            return ""
+        if not pool:
+            return ""
+        # Every third bridge has no reaction at all (human rhythm).
+        if index % 3 == 2:
+            return ""
+        return pool[index % len(pool)]
+
+    def _transition_for(self, related: bool, same_topic: bool, index: int) -> str:
+        """A rotated spoken transition into the next topic.
+
+        Entries are literal lines from messages.md — never formatted, so a
+        stray brace in a pool can never break the reply."""
+        if same_topic:
+            pool = self._pool("transition_same")
+        elif related:
+            pool = self._pool("transition_related")
+        else:
+            pool = self._pool("transition_new")
+        if not pool:
+            return ""
+        # Every fourth bridge asks the next question directly (no transition).
+        if index % 4 == 3:
+            return ""
+        return pool[index % len(pool)]
+
+    def next_question_bridge(
+        self,
+        question: str,
+        previous_topic: str = "",
+        next_topic: str = "",
+        *,
+        index: int = 0,
+        last_verdict: str | None = None,
+        related: bool = False,
+        same_topic: bool = False,
+    ) -> str:
+        reaction = self._reaction_for(last_verdict, index)
+        transition = self._transition_for(related, same_topic, index)
+        parts = [part for part in (reaction, transition) if part]
+        if parts and not reaction and transition:
+            # No reaction: the transition opens the sentence -> capitalise it.
+            parts[0] = transition[0].upper() + transition[1:]
+        prefix = (" ".join(parts) + " ") if parts else ""
+        return f"{prefix}{question}"
 
     def final_question_message(self) -> str:
         return self._messages["final_question"]
@@ -265,5 +343,13 @@ class PromptBuilder:
             name = match.group(1)
             start = match.end()
             end = matches[index + 1].start() if index + 1 < len(matches) else len(raw)
-            sections[name] = raw[start:end].strip()
+            content = raw[start:end].strip()
+            # Drop full-line comments ("# ...") that sit above the next
+            # header — the section parser would otherwise glue them onto
+            # this section and leak them into the interviewer's reply.
+            content = "\n".join(
+                line for line in content.splitlines()
+                if not line.lstrip().startswith("#")
+            ).strip()
+            sections[name] = content
         return sections

@@ -1,0 +1,246 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Background layers */
+  --bg-primary:   #08080F;
+  --bg-secondary: #0F0F1A;
+  --bg-card:      #14142B;
+  --bg-elevated:  #1C1C3A;
+
+  /* Brand colors */
+  --violet:       #7C3AED;
+  --violet-light: #9D6FEF;
+  --violet-dark:  #5B21B6;
+  --cyan:         #06B6D4;
+  --cyan-light:   #22D3EE;
+  --emerald:      #10B981;
+  --amber:        #F59E0B;
+  --rose:         #F43F5E;
+
+  /* Gradients */
+  --gradient-primary:  linear-gradient(135deg, #7C3AED 0%, #06B6D4 100%);
+  --gradient-card:     linear-gradient(135deg, rgba(124,58,237,0.15) 0%, rgba(6,182,212,0.05) 100%);
+  --gradient-hero:     radial-gradient(ellipse at top left, rgba(124,58,237,0.25) 0%, transparent 60%),
+                       radial-gradient(ellipse at bottom right, rgba(6,182,212,0.15) 0%, transparent 60%);
+
+  /* Text */
+  --text-primary:   #F1F5F9;
+  --text-secondary: #94A3B8;
+  --text-muted:     #475569;
+
+  /* Glass effect */
+  --glass-bg:     rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.07);
+  --glass-blur:   20px;
+
+  /* Shadows */
+  --shadow-violet: 0 0 40px rgba(124, 58, 237, 0.25);
+  --shadow-card:   0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-glow:   0 0 20px rgba(124, 58, 237, 0.4);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--violet); border-radius: 2px; }
+
+/* Display typeface for headings */
+.font-display { font-family: 'Space Grotesk', 'Inter', -apple-system, sans-serif; }
+
+/* Visible keyboard focus (quality floor) */
+:focus-visible {
+  outline: 2px solid var(--violet-light);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Respect reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .particle, .confetti-piece { display: none; }
+  .animated-gradient-text, .animated-bg { animation: none; }
+}
+
+/* Glassmorphism card */
+.glass-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border-radius: 16px;
+}
+
+/* Gradient text */
+.gradient-text {
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glow button */
+.btn-primary {
+  background: var(--gradient-primary);
+  border: none;
+  border-radius: 12px;
+  padding: 12px 24px;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow-glow);
+}
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 30px rgba(124, 58, 237, 0.6);
+}
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+/* Animated gradient background */
+.animated-bg {
+  background: var(--gradient-hero);
+  background-attachment: fixed;
+}
+
+/* Chat bubbles */
+.bubble-interviewer {
+  background: linear-gradient(135deg, rgba(124,58,237,0.2), rgba(6,182,212,0.1));
+  border: 1px solid rgba(124,58,237,0.3);
+  border-radius: 16px 16px 16px 4px;
+  padding: 16px 20px;
+  max-width: 75%;
+  align-self: flex-start;
+}
+
+.bubble-candidate {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px 16px 4px 16px;
+  padding: 16px 20px;
+  max-width: 75%;
+  align-self: flex-end;
+}
+
+/* Typing indicator */
+@keyframes bounce {
+  0%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-8px); }
+}
+.typing-dot {
+  width: 8px; height: 8px;
+  background: var(--violet-light);
+  border-radius: 50%;
+  animation: bounce 1.4s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.16s; }
+.typing-dot:nth-child(3) { animation-delay: 0.32s; }
+
+/* Progress bar fill animation */
+@keyframes fillBar {
+  from { width: 0%; }
+  to { width: var(--fill-width); }
+}
+
+/* Score counter animation */
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Candidate card hover */
+.candidate-card {
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  cursor: pointer;
+}
+.candidate-card:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--shadow-violet);
+  border-color: var(--violet) !important;
+}
+
+/* Fade+slide in animation */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-in {
+  animation: fadeSlideUp 0.35s ease forwards;
+}
+
+/* ─── Floating particles (landing hero) ─────────────────────────────────── */
+@keyframes floatUp {
+  0%   { transform: translateY(0) scale(1);   opacity: 0; }
+  10%  { opacity: var(--p-opacity, 0.5); }
+  90%  { opacity: var(--p-opacity, 0.5); }
+  100% { transform: translateY(-110vh) scale(0.6); opacity: 0; }
+}
+.particle {
+  position: absolute;
+  bottom: -10px;
+  border-radius: 9999px;
+  background: var(--p-color, #7C3AED);
+  filter: blur(0.5px);
+  pointer-events: none;
+  animation: floatUp linear infinite;
+  animation-duration: var(--p-duration, 14s);
+  animation-delay: var(--p-delay, 0s);
+  opacity: 0;
+}
+
+/* ─── Confetti (feedback page) ───────────────────────────────────────────── */
+@keyframes confettiFall {
+  0%   { transform: translateY(-10vh) rotate(0deg);   opacity: 1; }
+  100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+}
+.confetti-piece {
+  position: absolute;
+  top: 0;
+  width: var(--cw, 8px);
+  height: var(--ch, 12px);
+  border-radius: 2px;
+  animation: confettiFall linear forwards;
+  animation-duration: var(--cd, 3.2s);
+  animation-delay: var(--c-delay, 0s);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ─── Misc helpers ───────────────────────────────────────────────────────── */
+.animate-count-up {
+  animation: countUp 0.6s ease forwards;
+}
+
+/* Animated gradient text (hero headline) */
+@keyframes gradientShift {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+.animated-gradient-text {
+  background-size: 200% 200%;
+  animation: gradientShift 6s ease infinite;
+}

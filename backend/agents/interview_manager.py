@@ -320,17 +320,33 @@ class InterviewManager:
         if main_asked >= soft_target:
             return True
 
-        # Evidence-based early finish: every touched topic has a settled
-        # assessment (no open failures, no unverified claims, no unknowns).
+        # Evidence-based early finish: every touched topic has a *settled*
+        # assessment.  A topic is settled when either
+        #
+        # * it was exhausted — repeated failures or bare claims, so the
+        #   interviewer already moved on and no further evidence is coming
+        #   (an all-"I don't know" candidate must not be dragged past the
+        #   minimum with topic revisits), or
+        # * strong evidence was demonstrated (best score >= 7 with a
+        #   medium/high confidence) and no failure/claim is open.
+        #
+        # Anything else — a mid-topic failure, an unverified claim, a
+        # shallow (6/10) answer the interviewer would still probe, or an
+        # unknown with no evidence — keeps the interview going.
         touched = [
             assessment
             for assessment in session.plan.assessment.topics.values()
             if assessment.touched
         ]
         if touched and all(
-            assessment.knowledge_status != "unknown"
-            and assessment.consecutive_failures == 0
-            and assessment.bare_claims == 0
+            assessment.consecutive_failures >= 2
+            or assessment.bare_claims >= 2
+            or (
+                assessment.best_score >= 7
+                and assessment.confidence in ("medium", "high")
+                and assessment.consecutive_failures == 0
+                and assessment.bare_claims == 0
+            )
             for assessment in touched
         ):
             logger.info(
@@ -414,13 +430,27 @@ class InterviewManager:
                 session.profile.name, question.question
             )
         else:
-            previous_topic = (
-                session.plan.questions[-2].topic
+            previous_question = (
+                session.plan.questions[-2]
                 if len(session.plan.questions) > 1
-                else ""
+                else None
+            )
+            previous_topic = previous_question.topic if previous_question else ""
+            last_turn = session.memory.last()
+            related = bool(
+                previous_question is not None
+                and self._retriever.are_adjacent_days(
+                    previous_question.day_index, question.day_index
+                )
             )
             text = self._prompts.next_question_bridge(
-                question.question, previous_topic, question.topic
+                question.question,
+                previous_topic,
+                question.topic,
+                index=index,
+                last_verdict=last_turn.verdict.value if last_turn else None,
+                related=related,
+                same_topic=previous_topic == question.topic,
             )
 
         self._append(session, "interviewer", text)

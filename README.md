@@ -234,7 +234,7 @@ The Vite dev server proxies `/api` to `http://localhost:8000`.
 
 ```bash
 cd backend
-pytest                       # 82 tests, fully offline (mock LLM + fixtures)
+pytest                       # 95 tests, fully offline (mock LLM + fixtures)
 python scripts/live_tests.py # live scenarios A–H against the real datasets
 ```
 
@@ -444,9 +444,11 @@ Validation errors return a clean 400 with field details.
   every question.
 - **Evidence-based completion** — once the minimums are met, the interview
   ends when the soft budget is reached **or** every touched topic has a
-  settled assessment (no open failures, no bare claims, no unknowns), so a
-  decisive strong interview is not artificially extended — and an absolute
-  safety cap guarantees termination.
+  *settled* assessment: demonstrated (best score ≥ 7, no open
+  failures/claims) **or** exhausted (moved on after repeated failures or
+  bare claims). An all-"I don't know" interview therefore ends at the
+  8-question minimum instead of being dragged to the soft target with
+  topic revisits — and an absolute safety cap guarantees termination.
 - **Evidence-based evaluation** — the evaluator never treats surface
   phrases as competence:
   - "I don't know" → deterministic weak/simplify (never rewarded),
@@ -469,7 +471,13 @@ Validation errors return a clean 400 with field details.
   phrase ("creating a /chat API endpoint…"), explanation-style ones the
   "how …" concept — so a template can never produce "How does how to build
   X fit…?" or "the core job of how to create X", and they rotate angles
-  instead of repeating a main → example → mistake bundle.
+  instead of repeating a main → example → mistake bundle. The universal
+  "what's the core job of X?" simplification is banned — simplify
+  follow-ups are concept-grounded questions about the actual activity
+  ("walk me through X from the very first step", "what would X look like
+  in practice?", "what does X actually involve?"), and the gerund verb
+  table covers every curriculum verb so a phrase can never break mid-
+  sentence ("securing chatbot APIs…", never "Secure chatbot APIs…").
 - **Human conversational tone** — the system prompt, question and
   follow-up prompts enforce: ONE focused question per turn (never multi-
   part "and and and" questions), short spoken phrasing, brief *varied*
@@ -477,6 +485,23 @@ Validation errors return a clean 400 with field details.
   the same page…" on repeat), no long commentary on non-answers, no
   over-use of the healthcare/capstone framing, and no mention-prefix spam
   ("You mentioned X earlier") on every question.
+- **Deterministic conversational bridge** — the engine (not the LLM) owns
+  all spoken transitions between main questions: a short reaction keyed by
+  the previous answer's verdict ("Good —", "No worries —", "I see —"…)
+  plus a rotated, **topic-free** transition that knows whether the next
+  question stays on the same topic ("let's push a bit deeper…"), relates
+  to it ("and related to that —"), or is a fresh area ("let's switch
+  gears…"). The interviewer never reads a curriculum title to the
+  candidate (no "let's talk about Security, Privacy & Guardrails") and
+  never explains the relationship at length. Wording lives in
+  `prompts/messages.md` rotation pools; every third turn skips the
+  reaction and every fourth skips the transition, so the rhythm stays
+  human. The LLM is told to ask only the pure question — transitions are
+  never doubled or inconsistent.
+- **Relevant context retention** — the mock (and the real LLM's prompt)
+  reference concepts the candidate raised earlier, but only when they are
+  actually related to the question at hand and at most ~1 in 4 questions —
+  never a "You mentioned Docker" non-sequitur on every question.
 - **Duplicate prevention** — token-set Jaccard + cosine checks against all
   previous questions; flagged questions are regenerated with a rotated
   learning objective first, then a changed cognitive task.

@@ -51,11 +51,13 @@ _FALLBACK_DEEPER = (
     lambda a: f"Where does {a} sit in the architecture, and what would you "
     f"monitor in production?",
 )
+# Concept-grounded simplifications, never a universal "what's the core job
+# of X?" template — each phrasing is about the actual activity/concept and
+# rotates so a weak topic is never probed with the same sentence twice.
 _FALLBACK_SIMPLIFY = (
-    lambda a: f"Let's try a simpler angle: in one sentence, what's the core job "
-    f"of {a}?",
-    lambda a: f"Okay, let's come at it from the basics: when would you reach "
-    f"for {a}?",
+    lambda a: f"Let's break it down: walk me through {a} from the very first step.",
+    lambda a: f"No worries — what would {a} look like in practice?",
+    lambda a: f"Let's start simpler: what does {a} actually involve?",
 )
 _FALLBACK_RECOVERY = (
     lambda c: f"Let's step back: how would you explain {c} to a junior "

@@ -5,7 +5,7 @@ titles:
 
 * concept derivation from learning objectives (never the day title),
 * "I know" / "yes" is NOT competence — it triggers a verify probe,
-* "I don't know" ladder: simplify -> recovery scaffold -> move on,
+* "I don't know" ladder: one simpler diagnostic -> move on,
 * planner questions are grounded in a real learning objective,
 * learning objectives rotate within a day (no repeated assessments),
 * the mock provider never produces "What is <Day title>?" questions.
@@ -82,6 +82,22 @@ def test_fallback_question_rotates_angles() -> None:
         for count in range(3)
     }
     assert len(seen) == 3
+
+
+def test_fallback_simplify_never_uses_core_job() -> None:
+    """The universal \"what's the core job of X?\" simplification is banned:
+    every simplify fallback is a concept-grounded question about the actual
+    activity, so it can never read \"the core job of Secure chatbot APIs…\"."""
+    question = _question(
+        learning_objective="Secure chatbot APIs against unauthorized access",
+        concept="how to secure chatbot APIs against unauthorized access",
+    )
+    for count in range(3):
+        text = _fallback_question(question, FollowUpStrategy.SIMPLIFY, count)
+        assert "core job" not in text.lower()
+        assert "simpler angle" not in text.lower()
+        assert "in one sentence" not in text.lower()
+        assert len(text) > 10
 
 
 # ---------------------------------------------------------------------------
@@ -656,6 +672,7 @@ def test_should_terminate_keeps_going_with_open_evidence() -> None:
             assessment = session.plan.assessment.get_topic(day.primary_topic)
             assessment.questions_asked += 1
             assessment.best_score = 8
+            assessment.confidence = "medium"  # evaluator sets this with scores
         return session
 
     def mark(session: InterviewSession, field: str, value) -> None:
@@ -670,15 +687,64 @@ def test_should_terminate_keeps_going_with_open_evidence() -> None:
     mark(s_unknown, "confidence", "unknown")
     assert manager._should_terminate(s_unknown) is False
 
-    # A repeated failure -> keep going (misconception still open).
+    # A single open failure (mid-ladder) -> keep going.
     s_fail = build()
-    mark(s_fail, "consecutive_failures", 2)
+    mark(s_fail, "consecutive_failures", 1)
     assert manager._should_terminate(s_fail) is False
 
-    # A bare claim -> keep going (knowledge asserted, not demonstrated).
+    # A bare claim (not yet exhausted) -> keep going.
     s_claim = build()
     mark(s_claim, "bare_claims", 1)
     assert manager._should_terminate(s_claim) is False
+
+    # Exhausted topic (moved on after two failures) -> settled -> end early.
+    s_exhausted = build()
+    mark(s_exhausted, "consecutive_failures", 2)
+    assert manager._should_terminate(s_exhausted) is True
+
+
+def test_should_terminate_all_idk_ends_at_minimum() -> None:
+    """An all-\"I don't know\" interview finishes as soon as the minimums are
+    met: every topic is exhausted (moved on after two failures), so the
+    engine must NOT drag it to the soft target with topic revisits."""
+    from agents.interview_manager import InterviewManager
+    from config import settings
+    from memory.conversation_memory import ConversationMemory
+    from models.session import InterviewSession
+
+    profile = _profile("CAND-002")
+    retriever = _retriever()
+    manager = InterviewManager.__new__(InterviewManager)
+    manager._settings = settings
+
+    session = InterviewSession(
+        session_id="s-idk",
+        candidate_id="CAND-002",
+        profile=profile,
+        plan=InterviewPlan(),
+        memory=ConversationMemory(),
+    )
+    for index in range(8):
+        day = retriever.get_day(index % 6)
+        session.plan.questions.append(
+            PlannedQuestion(
+                day_index=index % 6,
+                day_title=day.title,
+                topic=day.primary_topic,
+                question_type=QuestionType.CONCEPTUAL,
+                difficulty=Difficulty.MEDIUM,
+                question="dummy",
+            )
+        )
+        if index % 6 not in session.plan.days_covered:
+            session.plan.days_covered.append(index % 6)
+        assessment = session.plan.assessment.get_topic(day.primary_topic)
+        assessment.questions_asked += 1
+        assessment.consecutive_failures = 2  # exhausted -> moved on
+        assessment.confidence = "low"
+        assessment.evidence.append("score 2/10 (weak)")
+
+    assert manager._should_terminate(session) is True
 
 
 # ---------------------------------------------------------------------------
@@ -829,3 +895,188 @@ async def test_feedback_topics_match_interview_state() -> None:
     # The mock summary reports the actual covered count (was "0 topics").
     assert str(touched) in feedback.summary
     assert "0 curriculum topics" not in feedback.summary
+
+
+# ---------------------------------------------------------------------------
+# conversational bridge: reaction + transition + question
+# ---------------------------------------------------------------------------
+
+
+def _bridge(question: str = "Can you explain vector embeddings?", **kwargs) -> str:
+    return PromptBuilder(settings).next_question_bridge(
+        question, **kwargs
+    )
+
+
+def test_bridge_always_contains_the_question() -> None:
+    """Whatever the reaction/transition rotation picks, the question itself
+    is always present verbatim."""
+    question = "Can you explain vector embeddings?"
+    for index in range(12):
+        for verdict in (None, "good", "weak", "wrong", "unclear"):
+            text = _bridge(question, index=index, last_verdict=verdict)
+            assert text.endswith(question)
+            assert question in text
+
+
+def test_bridge_reaction_matches_verdict() -> None:
+    """The reaction pool is keyed by the previous answer's verdict."""
+    good = _bridge(index=0, last_verdict="good")
+    weak = _bridge(index=0, last_verdict="weak")
+    wrong = _bridge(index=0, last_verdict="wrong")
+    claim = _bridge(index=0, last_verdict="unclear")
+    assert any(good.startswith(g) for g in ("Good", "Nice", "Right", "Exactly", "That's", "Good thinking"))
+    assert any(weak.startswith(w) for w in ("No worries", "That's okay", "Let's try", "Alright"))
+    assert any(wrong.startswith(w) for w in ("I see", "There's a subtlety", "Let's look"))
+    assert any(claim.startswith(c) for c in ("Alright", "Fair enough", "Okay"))
+
+
+def test_bridge_reactions_rotate() -> None:
+    """Consecutive bridges on the same verdict use different reactions (no
+    repeated stock phrase)."""
+    seen = {
+        _bridge(index=i, last_verdict="good")[:20]
+        for i in range(0, 20, 3)
+    }
+    assert len(seen) >= 2
+
+
+def test_bridge_sometimes_has_no_reaction() -> None:
+    """Human rhythm: not every turn reacts to the previous answer (the
+    reaction pool is skipped on a rotation even for good answers), but the
+    question is always asked."""
+    reactions = ("Good", "Nice", "Right", "Exactly", "That's", "Good thinking")
+    bare = _bridge(index=2, last_verdict="good")
+    assert not bare.startswith(reactions)
+    assert bare.endswith("Can you explain vector embeddings?")
+
+
+def test_bridge_new_topic_transition_is_topic_free() -> None:
+    """Transitions never announce the curriculum topic title: the
+    interviewer says \"let's switch gears\", not \"let's talk about
+    Security, Privacy & Guardrails\"."""
+    topic = "Security, Privacy & Guardrails"
+    for index in range(12):
+        for verdict in (None, "good", "weak", "wrong", "unclear"):
+            text = _bridge(
+                "What would you monitor in production?",
+                index=index,
+                last_verdict=verdict,
+                next_topic=topic,
+                related=False,
+            )
+            assert topic not in text
+            assert text.endswith("What would you monitor in production?")
+
+
+def test_bridge_never_uses_banned_phrases() -> None:
+    """The deterministic bridge must never emit the robotic stock phrases."""
+    banned = (
+        "Glad to hear it",
+        "Let's make sure we're on the same page",
+        "No problem — let's ground this differently",
+        "You mentioned",
+        "Let's move on to the next topic",
+    )
+    for index in range(24):
+        for verdict in (None, "good", "weak", "wrong", "unclear"):
+            text = _bridge(index=index, last_verdict=verdict, next_topic="MCP")
+            for phrase in banned:
+                assert phrase.lower() not in text.lower()
+
+
+def test_bridge_same_topic_uses_deepen_transition() -> None:
+    """Staying on the same topic deepens instead of switching gears."""
+    text = _bridge(index=4, last_verdict="good", next_topic="Embeddings", same_topic=True)
+    assert "deeper" in text or "stay on" in text or text.endswith("Can you explain vector embeddings?")
+
+
+def test_bridge_never_leaks_comment_lines() -> None:
+    """Rotation pools must never leak messages.md comment lines into the
+    interviewer's reply (regression: comments between sections used to
+    become pool entries)."""
+    from services.prompt_builder import PromptBuilder
+
+    prompts = PromptBuilder(settings)
+    for pool_name in ("reaction_good", "reaction_weak", "reaction_claim",
+                      "reaction_wrong", "transition_related", "transition_new",
+                      "transition_same"):
+        for entry in prompts._pool(pool_name):
+            assert not entry.startswith("#"), f"{pool_name} leaked: {entry!r}"
+    for index in range(24):
+        for verdict in (None, "good", "weak", "wrong", "unclear"):
+            text = _bridge(index=index, last_verdict=verdict, next_topic="MCP")
+            assert "#" not in text
+            assert "Transitions when" not in text
+
+
+def test_mock_simplify_never_uses_core_job() -> None:
+    """The mock simplify follow-up must never fall back to the universal
+    \"what's the core job of X?\" template (with broken gerund grammar for
+    verbs like \"Secure …\")."""
+    from services.llm_service import MockProvider
+
+    mock = MockProvider()
+    for _ in range(6):
+        out = mock._mock_follow_up(
+            "- Follow-up strategy: simplify\n"
+            "- Learning objective: Secure chatbot APIs against unauthorized access\n"
+            "- Technical concept: how to secure chatbot APIs against unauthorized access\n"
+            "CANDIDATE'S ANSWER\nI don't know\n\nEVALUATION\nweak",
+            "Security",
+        )
+        assert "core job" not in out["question"].lower()
+        assert "simpler angle" not in out["question"].lower()
+        assert "in one sentence" not in out["question"].lower()
+
+
+def test_mock_feedback_no_false_engaged_strength() -> None:
+    """An all-\"I don't know\" interview must never produce an \"Engaged with
+    every question\" strength nor a false competence claim: the fallback
+    strength is truthful, and the gaps/summary carry the lack of evidence."""
+    from services.llm_service import MockProvider
+
+    user = (
+        "ASSESSMENT STATE (per-topic, derived from the actual interview)\n"
+        "- Embeddings Explained: knowledge_status=incorrect, confidence=low, failures=2, bare_claims=0, score range 2-2/10\n"
+        "- Vector Databases: knowledge_status=incorrect, confidence=low, failures=2, bare_claims=0, score range 2-2/10\n"
+        "PROFILE TOPICS NOT TESTED\nnone\n"
+        "FULL INTERVIEW TRANSCRIPT\n"
+        "[Q1] Embeddings Explained | score=2/10 verdict=weak\n"
+        "[Q2] Vector Databases | score=2/10 verdict=weak\n"
+        "CANDIDATE PROFILE\nTest candidate"
+    )
+    feedback = MockProvider()._mock_feedback(user)
+    strengths = " ".join(feedback["strengths"]).lower()
+    assert "engaged with every question" not in strengths
+    assert "demonstrated" not in strengths
+    assert feedback["strengths"]  # schema requires >= 1
+    assert feedback["gaps"]  # weak topics must appear as gaps
+    assert "did not demonstrate" in feedback["summary"]
+
+
+def test_mock_question_occasionally_references_mentions() -> None:
+    """The mock may build on a concept the candidate raised earlier, but
+    never on every question, and only when the mention is relevant to the
+    question's concept (never a non-sequitur)."""
+    from services.llm_service import MockProvider
+
+    mock = MockProvider()
+    relevant = mock._mock_question(
+        "question 5 of 10\n- Candidate mentioned earlier: vector database, Docker\n- Question type: conceptual\n- Learning objective: Store embeddings in a vector store\n- Technical concept: how to store embeddings",
+        "Vector Databases",
+    )
+    irrelevant = mock._mock_question(
+        "question 5 of 10\n- Candidate mentioned earlier: ChromaDB, Docker\n- Question type: conceptual\n- Learning objective: Store embeddings in a vector store\n- Technical concept: how to store embeddings",
+        "Vector Databases",
+    )
+    without = mock._mock_question(
+        "question 2 of 10\n- Candidate mentioned earlier: none yet\n- Question type: conceptual\n- Learning objective: Store embeddings in a vector store\n- Technical concept: how to store embeddings",
+        "Vector Databases",
+    )
+    # Rotation: question 5 (n % 4 == 1) references a RELEVANT mention;
+    # question 2 does not; ChromaDB/Docker are irrelevant to embeddings.
+    assert "vector database" in relevant["question"]
+    assert "mentioned" in relevant["question"]
+    assert "mentioned" not in irrelevant["question"]
+    assert "mentioned" not in without["question"]

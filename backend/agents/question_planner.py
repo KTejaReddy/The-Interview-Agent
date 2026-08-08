@@ -272,10 +272,16 @@ class QuestionPlanner:
 
             candidates.append((score, index, topic))
 
-        # Fallback 1: completed days still within the per-day cap.  This may
-        # re-pick days already marked weak/failed — intentional: the 8-main
-        # minimum must still be reachable for candidates who completed few
-        # days and struggled on all of them.
+        # Fallback 1: any completed day still within the per-day cap.  This
+        # may re-pick days already marked weak/failed — but only when the
+        # primary loop found nothing, i.e. every completed day is either at
+        # its 2-main cap or was exhausted (repeated failures / bare claims).
+        # Re-picking is intentional: the 8-main minimum must still be
+        # reachable for candidates who completed few days and struggled on
+        # all of them.  In the common case the interviewer never circles
+        # back: failure-excluded days are skipped by the primary loop, and
+        # the evidence-based early finish ends the interview at 8 mains
+        # before this fallback is ever reached.
         if not candidates:
             for index in range(self._retriever.day_count):
                 day = self._retriever.get_day(index)

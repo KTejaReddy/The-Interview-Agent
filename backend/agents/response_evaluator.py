@@ -12,9 +12,9 @@ predictable where it matters most:
 * a *bare knowledge claim* ("I know", "yes", "I understand" with no
   substance) is never treated as demonstrated competence: it is marked
   ``VERIFY`` so the interviewer asks for evidence with a concrete scenario,
-* failure ladder on the same topic: first struggle -> a different, simpler
-  diagnostic question (``simplify``); second struggle -> a foundational
-  scaffolding question (``recovery``); third struggle -> the topic is marked
+* failure ladder on the same topic: first struggle -> one simpler,
+  *different* diagnostic question (``simplify``, or ``recovery`` when the
+  answer contained a misconception); second struggle -> the topic is marked
   weak and the interviewer moves on (``next_topic``), never trapping the
   candidate,
 * every answer updates the per-topic assessment (confidence, counters,

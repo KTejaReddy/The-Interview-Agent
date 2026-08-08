@@ -65,10 +65,12 @@ _IRREGULAR_GERUNDS = {
     "hit": "hitting", "plan": "planning", "drop": "dropping",
     "debug": "debugging", "embed": "embedding", "scan": "scanning",
     "log": "logging", "pin": "pinning", "tag": "tagging",
+    "wrap": "wrapping", "model": "modeling",
 }
 
 #: Verb stems the curriculum opens objectives with (derived from the actual
-#: dataset, plus a few chain verbs such as "activate", "debug", "normalize").
+#: datasets — every opening verb of curriculum.json and the fixtures is
+#: listed, so a gerund phrase can never break mid-sentence).
 _VERB_STEMS = frozenset(
     {
         "create", "build", "implement", "validate", "evaluate", "verify",
@@ -83,6 +85,11 @@ _VERB_STEMS = frozenset(
         "explain", "understand", "learn", "know", "describe", "recognize",
         "recall", "appreciate", "explore", "reuse", "collect", "parse",
         "chunk", "embed", "query", "retrieve", "rank", "search", "summarize",
+        "apply", "containerize", "model", "benchmark", "complete",
+        "demonstrate", "establish", "expose", "fix", "manage", "optimize",
+        "persist", "present", "protect", "replace", "secure", "showcase",
+        "track", "use", "wrap", "train", "handle", "render", "display",
+        "log", "pin", "tag",
     }
 )
 
