@@ -1018,25 +1018,32 @@ class LLMService:
             # skipped without making a doomed request.
             est_input_tokens = (len(system) + len(prompt_to_send)) // 4
             est_total_tokens = est_input_tokens + model_max_tokens
-            if not self._health.reserve_capacity(model, est_total_tokens):
+            reserved = self._health.reserve_capacity(model, est_total_tokens)
+            if not reserved:
                 if self._health.get(model).healthy:
-                    logger.info(
-                        "Quota-aware skip: %s is near its quota limit "
-                        "(~%d tokens requested) — trying next model.",
-                        model, est_total_tokens,
-                    )
-                    last_error = last_error or LLMError(
-                        "All suitable models are at their quota headroom "
-                        "for this call."
-                    )
+                    if model != candidates[-1]:
+                        logger.info(
+                            "Quota-aware skip: %s is near its quota limit "
+                            "(~%d tokens requested) — trying next model.",
+                            model, est_total_tokens,
+                        )
+                        last_error = last_error or LLMError(
+                            "All suitable models are at their quota headroom "
+                            "for this call."
+                        )
+                        continue
+                    else:
+                        logger.info(
+                            "Model %s is at quota limit but is the last resort — "
+                            "attempting anyway.", model
+                        )
                 else:
                     logger.info(
                         "Quota-aware skip: %s is unhealthy (reservation "
                         "failed) — trying next model.",
                         model,
                     )
-                continue
-            reserved = True
+                    continue
             
             while attempts < 2:
                 attempts += 1
