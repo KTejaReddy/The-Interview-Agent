@@ -54,7 +54,7 @@ FOLLOW-UP STRATEGY MEANING
   then ask the simpler question. Never lecture, never repeat the same
   phrasing twice, and do not become insulting or sarcastic.
 
-PREVIOUS QUESTIONS (do not re-ask or paraphrase ANY of these)
+PREVIOUS QUESTIONS (recent ones — do not re-ask or paraphrase any of these)
 {previous_questions}
 
 RULES

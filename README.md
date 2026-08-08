@@ -236,9 +236,44 @@ The Vite dev server proxies `/api` to `http://localhost:8000`.
 
 ```bash
 cd backend
-pytest                       # 111 tests, fully offline (mock LLM + fixtures)
+pytest                       # 116 tests, fully offline (mock LLM + fixtures)
 python scripts/live_tests.py # live scenarios A–H against the real datasets
 ```
+
+### 5. Performance
+
+Interview turns are optimized for low latency without sacrificing the
+conversational intelligence:
+
+* **One LLM call per turn, often zero** — obvious answers ("I don't know",
+  greetings, bare "I know" claims) are classified deterministically
+  (`utils/answer_signals`) with no LLM round-trip, so weak-candidate turns
+  cost a single (or zero) model call instead of evaluation + generation.
+  Substantive answers still get full semantic LLM evaluation.
+* **Fast-model routing** — short follow-ups on non-substantive verdicts
+  (simplify / verify / recovery) route to `LLM_FAST_MODEL`
+  (default `llama-3.1-8b-instant`, already in the fallback chain — no new
+  key); complex reasoning (evaluation, new-topic questions, deep follow-ups,
+  feedback) keeps the primary model. When the primary is rate-limited, the
+  fast model is tried next so a quota outage degrades to ~0.3 s answers
+  instead of a long fallback walk.
+* **Compact context** — prompts see the last `TRANSCRIPT_WINDOW` turns
+  verbatim (default 6) plus a structured digest (aggregate summary + notable
+  earlier statements); earlier claims, mistakes and contradictions are never
+  lost. Only final feedback reads the whole transcript (it runs once).
+* **Capped output** — conversational calls use `LLM_TURN_MAX_TOKENS`
+  (default 300) instead of the 800-token general budget; feedback keeps the
+  full budget.
+* **Quota-aware retries** — a daily-token-quota 429 ("try again in 20+
+  min") skips straight to the next model instead of burning 1+2+4 s backoff
+  on an exhausted model; transient errors still retry.
+* **Instrumentation** — every LLM call logs
+  `llm_call session=… type=… model=… ms=… in_tok~… out_tok~…` and every
+  turn logs `turn session=… state=… total_ms=…`.
+
+Measured on the live server (Groq, `127.0.0.1`): start ≈ 0.6 s, an
+"I don't know" follow-up ≈ 0.3 s, a new-topic question ≈ 1.4 s, a
+substantive answer + deep follow-up ≈ 2.5 s — down from 30-35 s per turn.
 
 ---
 

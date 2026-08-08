@@ -351,6 +351,259 @@ async def test_idk_ladder_simplify_then_move_on() -> None:
 
 
 @pytest.mark.asyncio
+async def test_evaluator_skips_llm_for_obvious_answers(monkeypatch) -> None:
+    """"I don't know", greetings and bare claims are classified
+    deterministically — the LLM is never consulted for surface phrases, so
+    weak-candidate turns cost one LLM call instead of two."""
+    llm = LLMService(settings)
+    prompts = PromptBuilder(settings)
+    evaluator = ResponseEvaluator(llm, prompts)
+
+    async def should_not_be_called(*args, **kwargs):
+        raise AssertionError("LLM must not be called for obvious non-answers")
+
+    monkeypatch.setattr(llm, "structured_completion", should_not_be_called)
+
+    r1 = await evaluator.evaluate(_context(), _question(), "I don't know")
+    assert r1.verdict == Verdict.WEAK
+    assert r1.strategy == FollowUpStrategy.SIMPLIFY
+    assert r1.used_llm is False
+
+    r2 = await evaluator.evaluate(_context(), _question(), "hello")
+    assert r2.verdict == Verdict.WEAK
+    assert r2.strategy == FollowUpStrategy.SIMPLIFY
+    assert r2.used_llm is False
+
+    r3 = await evaluator.evaluate(_context(), _question(), "I know")
+    assert r3.verdict == Verdict.UNCLEAR
+    assert r3.strategy == FollowUpStrategy.VERIFY
+    assert r3.used_llm is False
+
+
+@pytest.mark.asyncio
+async def test_evaluator_uses_llm_for_substantive_answers(monkeypatch) -> None:
+    """A real technical answer still goes through the LLM for semantic
+    judgement (the fast path never dumb-downs substantive answers)."""
+    from schemas.llm import EvaluationDraft
+
+    llm = LLMService(settings)
+    prompts = PromptBuilder(settings)
+    evaluator = ResponseEvaluator(llm, prompts)
+    called = {"n": 0}
+
+    async def fake_completion(*, system_prompt, user_prompt, schema):
+        called["n"] += 1
+        return EvaluationDraft(
+            score=8,
+            verdict="good",
+            follow_up="deeper",
+            mastered_topic=False,
+            notes="Solid answer.",
+        )
+
+    monkeypatch.setattr(llm, "structured_completion", fake_completion)
+    result = await evaluator.evaluate(
+        _context(),
+        _question(),
+        "Embeddings map text into a vector space so we can compare meaning "
+        "with similarity measures like cosine distance.",
+    )
+    assert called["n"] == 1
+    assert result.used_llm is True
+    assert result.verdict == Verdict.GOOD
+    assert result.strategy == FollowUpStrategy.DEEPER
+
+
+def test_transcript_window_keeps_recent_and_compresses_older() -> None:
+    """Prompts see the last ``transcript_window`` turns verbatim; older
+    notable statements survive as a compact digest, and feedback still gets
+    the complete transcript."""
+    from services.prompt_builder import PromptBuilder
+
+    memory = ConversationMemory()
+    for i in range(8):
+        strong = i == 0
+        memory.add_turn(
+            question=f"Question number {i + 1}?",
+            topic="Embeddings Explained",
+            day_index=6,
+            question_type=QuestionType.CONCEPTUAL,
+            difficulty=Difficulty.MEDIUM,
+            answer=(
+                "Embeddings map meaning into a shared vector space."
+                if strong
+                else f"Answer number {i + 1}."
+            ),
+            score=8 if strong else 5,
+            verdict=Verdict.GOOD if strong else Verdict.WEAK,
+            follow_up=FollowUpStrategy.DEEPER if strong else FollowUpStrategy.SIMPLIFY,
+        )
+
+    manager = ContextManager(transcript_window=6)
+    context = manager.build(
+        state=InterviewState.QUESTIONING,
+        candidate=_profile(),
+        plan=InterviewPlan(),
+        memory=memory,
+        question_index=7,
+    )
+
+    excerpt = context.transcript_excerpt
+    assert "Question number 8?" in excerpt  # most recent turn, verbatim
+    assert "Question number 1?" not in excerpt  # older than the window
+    # The compressed digest still carries the earlier strong statement.
+    assert "shared vector space" in context.notable_earlier_statements
+
+    prompts = PromptBuilder(settings)
+    feedback = prompts.feedback_prompt(context)
+    # Feedback reasons over the WHOLE interview, not just the window.
+    assert "Answer number 2." in feedback
+    assert "Question number 2?" in feedback
+
+
+def test_llm_service_routes_fast_model_and_token_budget(monkeypatch) -> None:
+    """Short follow-ups on non-substantive verdicts use the fast model;
+    substantive generation keeps the primary model; conversational calls are
+    capped at the turn budget while feedback keeps the full budget."""
+    import json as _json
+
+    from schemas.llm import (
+        EvaluationDraft,
+        FeedbackDraft,
+        FollowUpDraft,
+        QuestionDraft,
+    )
+
+    service = LLMService(settings)
+
+    class _RecordingProvider:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, int]] = []  # (model, max_tokens)
+
+        async def complete(
+            self, *, model, system, user, temperature, max_tokens, timeout
+        ) -> str:
+            self.calls.append((model, max_tokens))
+            if "Follow-up strategy" in user:
+                return _json.dumps({
+                    "question": "Let's test that with a concrete example.",
+                    "intent": "verify",
+                    "difficulty": "easy",
+                })
+            if "Generate ONE interview question" in user:
+                return _json.dumps({
+                    "question": "How would you approach this in practice?",
+                    "topic": "Embeddings Explained",
+                    "intent": "probe",
+                    "question_type": "scenario",
+                })
+            if "The interview is finished" in user:
+                return _json.dumps({
+                    "summary": "A concise summary of the interview.",
+                    "strengths": ["Strong concept coverage"],
+                    "gaps": ["Deeper practice needed"],
+                    "next": ["Review the modules"],
+                    "score": 70,
+                    "confidence": 0.7,
+                    "topics_covered": ["Embeddings Explained"],
+                })
+            return _json.dumps({
+                "score": 7, "verdict": "good", "follow_up": "deeper",
+                "mastered_topic": False, "notes": "ok",
+            })
+
+    recorder = _RecordingProvider()
+    monkeypatch.setattr(service, "_provider", recorder)
+
+    import asyncio
+
+    async def run():
+        # Fast path: simplify follow-up -> fast model + turn budget.
+        await service.structured_completion(
+            system_prompt="s",
+            user_prompt="Follow-up strategy: simplify\n- Follow-up strategy: simplify\nquestion",
+            schema=FollowUpDraft,
+        )
+        # Question generation -> primary model + turn budget.
+        await service.structured_completion(
+            system_prompt="s",
+            user_prompt="Generate ONE interview question about the concept.",
+            schema=QuestionDraft,
+        )
+        # Evaluation -> primary model + turn budget.
+        await service.structured_completion(
+            system_prompt="s",
+            user_prompt="Evaluate the candidate's answer carefully.",
+            schema=EvaluationDraft,
+        )
+        # Feedback -> primary model + FULL budget.
+        await service.structured_completion(
+            system_prompt="s",
+            user_prompt="The interview is finished. Produce final feedback.",
+            schema=FeedbackDraft,
+        )
+
+    asyncio.run(run())
+
+    fast, turn_budget = settings.llm_fast_model, settings.llm_turn_max_tokens
+    primary, full_budget = settings.llm_model, settings.llm_max_tokens
+    assert recorder.calls[0] == (fast, turn_budget)  # simplify follow-up
+    assert recorder.calls[1] == (primary, turn_budget)  # question
+    assert recorder.calls[2] == (primary, turn_budget)  # evaluation
+    assert recorder.calls[3] == (primary, full_budget)  # feedback
+
+
+def test_llm_service_skips_exhausted_quota_models(monkeypatch) -> None:
+    """A daily-token-quota 429 must not trigger short backoff retries: the
+    exhausted model is skipped after ONE attempt and the fast model answers
+    immediately — no 7s-per-model sleep walk."""
+    import asyncio
+    import json as _json
+
+    from schemas.llm import FollowUpDraft
+    from utils.errors import LLMError
+
+    service = LLMService(settings)
+
+    class _QuotaThenOk:
+        def __init__(self) -> None:
+            self.models_tried: list[str] = []
+
+        async def complete(
+            self, *, model, system, user, temperature, max_tokens, timeout
+        ) -> str:
+            self.models_tried.append(model)
+            if model == settings.llm_model:
+                raise LLMError(
+                    "LLM provider returned HTTP 429: rate_limit_exceeded "
+                    "tokens per day (TPD): Limit 100000, Used 99568. "
+                    "Please try again in 29m37.248s."
+                )
+            return _json.dumps({
+                "question": "Let's test that with a concrete example.",
+                "intent": "verify",
+                "difficulty": "easy",
+            })
+
+    provider = _QuotaThenOk()
+    monkeypatch.setattr(service, "_provider", provider)
+
+    async def run():
+        await service.structured_completion(
+            system_prompt="s",
+            user_prompt="Follow-up strategy: deeper\nquestion",
+            schema=FollowUpDraft,
+        )
+
+    asyncio.run(run())
+    # Primary tried exactly once (quota skip, no backoff), then the fast
+    # model answered — the rest of the fallback chain is never reached.
+    assert provider.models_tried[0] == settings.llm_model
+    assert provider.models_tried[1] == settings.llm_fast_model
+    assert len(provider.models_tried) == 2
+
+
+@pytest.mark.asyncio
 async def test_greeting_is_non_substantive() -> None:
     """A greeting ("hello") is a non-answer: one short simpler recovery,
     never a long explanation about why the candidate didn't answer."""
@@ -1472,7 +1725,7 @@ def test_question_prompt_includes_full_conversation() -> None:
     assert "RAG retrieves documents before generation." in prompt
     assert "Using embeddings and similarity search." in prompt
     assert "What is RAG?" in prompt
-    assert "FULL CONVERSATION SO FAR" in prompt
+    assert "RECENT CONVERSATION" in prompt
 
 
 @pytest.mark.asyncio

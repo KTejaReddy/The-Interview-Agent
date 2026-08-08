@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from abc import ABC, abstractmethod
 from typing import Any, TypeVar
 
@@ -758,7 +759,24 @@ class LLMService:
         user_prompt: str,
         schema: type[T],
     ) -> T:
-        """Ask the model for JSON and return a validated Pydantic instance."""
+        """Ask the model for JSON and return a validated Pydantic instance.
+
+        One call per interviewer turn is the target: obvious answers are
+        classified deterministically before this is ever reached, and the
+        per-call budget (model + max tokens) is picked from the call type:
+
+        * ``evaluate`` / ``question`` / ``follow_up`` get the fast turn
+          budget (``llm_turn_max_tokens``) — the interviewer replies in a
+          few short sentences, never 800 tokens;
+        * short follow-ups on non-substantive verdicts (simplify / verify /
+          recovery) route to the fast model (``llm_fast_model``) with the
+          primary model still in the fallback chain;
+        * final feedback keeps the full ``llm_max_tokens`` budget and the
+          primary model.
+
+        The signature stays stable so callers and test doubles are
+        unaffected; routing is decided here from the prompt itself.
+        """
         if not self.configured:
             raise LLMNotConfiguredError(
                 "No LLM provider is configured. Set LLM_API_KEY in "
@@ -770,10 +788,21 @@ class LLMService:
             "markdown, no commentary."
         )
 
+        call_type = self._detect_call_type(user_prompt)
+        max_tokens = (
+            self._settings.llm_max_tokens
+            if call_type == "feedback"
+            else self._settings.llm_turn_max_tokens
+        )
+        fast = self._use_fast_model(user_prompt, call_type)
+
         session = current_session.get()
         primary_model = session.llm_model if session and session.llm_model else self._settings.llm_model
-        
-        candidates = [primary_model]
+
+        if fast:
+            candidates = [self._settings.llm_fast_model, primary_model]
+        else:
+            candidates = [primary_model, self._settings.llm_fast_model]
         for m in self._settings.llm_fallback_models:
             if m not in candidates:
                 candidates.append(m)
@@ -794,34 +823,69 @@ class LLMService:
             while attempts < 4:
                 attempts += 1
                 try:
+                    t0 = time.perf_counter()
                     raw = await self._provider.complete(
                         model=model,
                         system=system,
                         user=prompt_to_send,
                         temperature=self._settings.llm_temperature,
-                        max_tokens=self._settings.llm_max_tokens,
+                        max_tokens=max_tokens,
                         timeout=self._settings.llm_timeout_seconds,
+                    )
+                    elapsed_ms = (time.perf_counter() - t0) * 1000
+                    session_id = (
+                        current_session.get().session_id
+                        if current_session.get()
+                        else "-"
+                    )
+                    logger.info(
+                        "llm_call session=%s type=%s model=%s ms=%d "
+                        "in_tok~%d out_tok~%d",
+                        session_id,
+                        call_type,
+                        model,
+                        elapsed_ms,
+                        (len(system) + len(prompt_to_send)) // 4,
+                        len(raw) // 4,
                     )
                 except LLMNotConfiguredError:
                     raise
                 except LLMError as exc:
                     last_error = exc
                     exc_str = str(exc).lower()
-                    is_retryable = any(kw in exc_str for kw in ["429", "capacity", "timeout", "rate limit", "503"])
-                    if is_retryable and attempts < 4:
+                    # A daily-token-quota 429 tells us to wait 20+ minutes —
+                    # short backoff retries just burn time.  Skip straight to
+                    # the next model so the fastest working fallback (the
+                    # fast model) answers immediately.
+                    quota_exhausted = any(
+                        kw in exc_str
+                        for kw in ("tokens per day", "tpd", "try again in")
+                    )
+                    is_retryable = any(
+                        kw in exc_str
+                        for kw in ["429", "capacity", "timeout", "rate limit", "503"]
+                    )
+                    if is_retryable and not quota_exhausted and attempts < 4:
                         delay = [1, 2, 4][attempts - 1]
                         logger.warning("Retryable error on %s (attempt %d). Sleeping %ds: %s", model, attempts, delay, exc)
                         await asyncio.sleep(delay)
                         continue
                     else:
-                        logger.error("Model %s failed (attempt %d): %s", model, attempts, exc)
+                        logger.warning(
+                            "Model %s not usable right now (attempt %d): %s",
+                            model, attempts, str(exc)[:200],
+                        )
                         break
 
                 try:
                     payload = json.loads(_extract_json(raw))
                     result = schema.model_validate(payload)
                     
-                    if session and session.llm_model != model:
+                    # Session model selection tracks fallbacks, not the
+                    # deliberate fast-path choice: a short follow-up routed
+                    # to the fast model must not downgrade the session's
+                    # model for heavier calls.
+                    if session and session.llm_model != model and not fast:
                         logger.info("Session fallback: switching to %s (was %s)", model, session.llm_model)
                         session.llm_model = model
                         
@@ -845,3 +909,34 @@ class LLMService:
 
         logger.error("All LLM fallback models failed. Last error: %s", last_error)
         raise LLMUnavailableError("The AI service is temporarily unavailable. Please try again in a moment.")
+
+    @staticmethod
+    def _detect_call_type(user_prompt: str) -> str:
+        """Classify the LLM call from the prompt itself (same markers the
+        mock provider dispatches on), so routing needs no extra plumbing."""
+        if "Generate ONE interview question" in user_prompt:
+            return "question"
+        if "Evaluate the candidate" in user_prompt:
+            return "evaluate"
+        if "Follow-up strategy" in user_prompt:
+            return "follow_up"
+        if "The interview is finished" in user_prompt:
+            return "feedback"
+        return "unknown"
+
+    @staticmethod
+    def _use_fast_model(user_prompt: str, call_type: str) -> bool:
+        """True when this turn is a short, semi-formulaic follow-up on a
+        non-substantive verdict (simplify / verify / recovery) — exactly the
+        calls where a fast model is sufficient and the primary model's depth
+        adds latency without adding quality."""
+        if call_type != "follow_up":
+            return False
+        return any(
+            marker in user_prompt
+            for marker in (
+                "- Follow-up strategy: simplify",
+                "- Follow-up strategy: verify",
+                "- Follow-up strategy: recovery",
+            )
+        )

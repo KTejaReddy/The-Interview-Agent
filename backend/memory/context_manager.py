@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from memory.conversation_memory import ConversationMemory
 from models.candidate_profile import CandidateProfile
+from models.enums import Verdict
 from models.interview_state import InterviewState
 from models.plan import InterviewPlan, PlannedQuestion
 
@@ -28,12 +29,43 @@ class InterviewContext:
     last_answer: str = ""
     is_follow_up: bool = False
     follow_ups_used: int = 0
+    #: Turns kept verbatim in prompts.  Older turns are compressed into the
+    #: structured memory (``aggregate_summary`` + ``notable_earlier_``
+    #: ``statements``), so prompt size stays flat as the interview grows.
+    transcript_window: int = 6
 
     # --- convenience projections ------------------------------------------
 
     @property
     def transcript_excerpt(self) -> str:
-        return self.memory.format_transcript()
+        """Recent turns verbatim (rolling window, not the whole interview)."""
+        return self.memory.format_transcript(limit=self.transcript_window)
+
+    @property
+    def notable_earlier_statements(self) -> str:
+        """Compact digest of notable statements older than the window.
+
+        Contradiction detection and cross-turn memory must survive the
+        rolling window: earlier strong answers (candidate claims) and wrong
+        answers (misconceptions) are kept here, truncated, so prompts still
+        reason over the whole interview without re-sending every turn.
+        """
+        older = self.memory.all_turns
+        if self.transcript_window > 0:
+            older = older[:-self.transcript_window]
+        entries: list[str] = []
+        for turn in reversed(older):
+            if turn.verdict not in (Verdict.GOOD, Verdict.EXCELLENT, Verdict.WRONG):
+                continue
+            snippet = " ".join(turn.answer.split())
+            if len(snippet) > 160:
+                snippet = snippet[:160] + "…"
+            entries.append(f"[{turn.topic}] {snippet}")
+            if len(entries) >= 6:
+                break
+        if not entries:
+            return "none — the recent conversation covers all earlier statements."
+        return "\n".join(entries)
 
     @property
     def candidate_mentions(self) -> str:
@@ -65,6 +97,9 @@ class InterviewContext:
 class ContextManager:
     """Factory for :class:`InterviewContext` snapshots."""
 
+    def __init__(self, transcript_window: int = 6) -> None:
+        self._transcript_window = max(0, transcript_window)
+
     def build(
         self,
         state: InterviewState,
@@ -87,4 +122,5 @@ class ContextManager:
             last_answer=last_answer,
             is_follow_up=is_follow_up,
             follow_ups_used=follow_ups_used,
+            transcript_window=self._transcript_window,
         )

@@ -81,6 +81,11 @@ class EvaluationResult:
     strategy: FollowUpStrategy
     mastered_topic: bool
     notes: str
+    #: True when the LLM was consulted.  Obvious answers ("I don't know",
+    #: "I know" with no substance, greetings) are classified deterministically
+    #: without an LLM round-trip — the fast path keeps weak-candidate turns
+    #: at a single LLM call instead of two.
+    used_llm: bool = True
 
     @property
     def wants_follow_up(self) -> bool:
@@ -101,28 +106,85 @@ class ResponseEvaluator:
         self._llm = llm
         self._prompts = prompts
 
+    @staticmethod
+    def _deterministic_draft(answer: str) -> EvaluationDraft | None:
+        """Classify obvious answers without the LLM.
+
+        Surface phrases are not evidence: "I don't know", greetings and
+        bare knowledge claims need no model to understand — spending an LLM
+        call on them only adds latency to the exact turns the interview
+        rules already handle deterministically.  Mirrors the LLM-override
+        order below (idk -> greeting -> claim -> weak filler) so the fast
+        path and the LLM path can never disagree.  Returns ``None`` when the
+        answer is substantive and needs semantic judgement.
+        """
+        if detects_idk(answer):
+            return EvaluationDraft(
+                score=2,
+                verdict="weak",
+                follow_up="simplify",
+                mastered_topic=False,
+                notes="The candidate did not provide a substantive answer.",
+            )
+        if detects_greeting(answer):
+            return EvaluationDraft(
+                score=2,
+                verdict="weak",
+                follow_up="simplify",
+                mastered_topic=False,
+                notes=(
+                    "The candidate gave a greeting/non-answer — ask the "
+                    "same assessment more simply."
+                ),
+            )
+        if detects_claim_without_evidence(answer):
+            return EvaluationDraft(
+                score=4,
+                verdict="unclear",
+                follow_up="verify",
+                mastered_topic=False,
+                notes=(
+                    "The candidate asserted knowledge without demonstrating "
+                    "it — verify with a concrete scenario from the learning "
+                    "objective."
+                ),
+            )
+        if any(pattern.match(answer) for pattern in _WEAK_ANSWER_PATTERNS):
+            return EvaluationDraft(
+                score=2,
+                verdict="weak",
+                follow_up="simplify",
+                mastered_topic=False,
+                notes="The candidate gave no substantive answer.",
+            )
+        return None
+
     async def evaluate(
         self,
         context: InterviewContext,
         question: PlannedQuestion,
         answer: str,
     ) -> EvaluationResult:
-        prompt = self._prompts.evaluate_prompt(
-            context,
-            question=question.question,
-            topic=question.topic,
-            question_type=question.question_type.value,
-            difficulty=question.difficulty.value,
-            intent=question.intent,
-            learning_objective=question.learning_objective,
-            concept=question.concept,
-            answer=answer,
-        )
-        draft: EvaluationDraft = await self._llm.structured_completion(
-            system_prompt=self._prompts.system_prompt(),
-            user_prompt=prompt,
-            schema=EvaluationDraft,
-        )
+        # Fast path: obvious non-answers never consume an LLM round-trip.
+        draft = self._deterministic_draft(answer)
+        used_llm = draft is None
+        if draft is None:
+            prompt = self._prompts.evaluate_prompt(
+                context,
+                question=question.question,
+                topic=question.topic,
+                question_type=question.question_type.value,
+                difficulty=question.difficulty.value,
+                intent=question.intent,
+                learning_objective=question.learning_objective,
+                concept=question.concept,
+                answer=answer,
+            )
+            draft = await self._llm.structured_completion(
+                system_prompt=self._prompts.system_prompt(),
+                user_prompt=prompt,
+                schema=EvaluationDraft,
+            )
 
         verdict = _VERDICT_MAP.get(draft.verdict, Verdict.UNCLEAR)
         strategy = _STRATEGY_MAP.get(draft.follow_up, FollowUpStrategy.NEXT_TOPIC)
@@ -247,4 +309,5 @@ class ResponseEvaluator:
             strategy=strategy,
             mastered_topic=mastered,
             notes=notes,
+            used_llm=used_llm,
         )

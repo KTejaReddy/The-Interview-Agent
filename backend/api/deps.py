@@ -61,7 +61,9 @@ class Container:
             difficulty_manager=self.difficulty,
         )
         self.feedback_generator = FeedbackGenerator(self.llm, self.prompts)
-        self.context = ContextManager()
+        self.context = ContextManager(
+            transcript_window=settings.transcript_window
+        )
         self.manager = InterviewManager(
             settings,
             self.sessions,

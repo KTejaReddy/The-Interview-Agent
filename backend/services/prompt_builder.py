@@ -90,9 +90,14 @@ class PromptBuilder:
         return last.answer if last else "none yet"
 
     @staticmethod
-    def _previous_questions(context: InterviewContext) -> str:
+    def _previous_questions(context: InterviewContext, limit: int = 6) -> str:
+        """Recent question texts (rolling window).  The deterministic
+        duplicate guard keeps its own full history, so the prompt only needs
+        the recent ones — older questions add tokens without adding
+        dedup power."""
         questions = [turn.question for turn in context.memory.all_turns]
-        return "\n".join(f"- {question}" for question in questions) or "none yet"
+        recent = questions[-limit:] if limit > 0 else questions
+        return "\n".join(f"- {question}" for question in recent) or "none yet"
 
     # --- user prompts -----------------------------------------------------
 
@@ -180,6 +185,7 @@ class PromptBuilder:
             candidate_summary=context.candidate.summary,
             aggregate_summary=context.aggregate_summary,
             conversation_so_far=context.transcript_excerpt,
+            notable_earlier_statements=context.notable_earlier_statements,
         )
 
     def follow_up_prompt(
@@ -221,7 +227,7 @@ class PromptBuilder:
             follow_up_count=follow_up_count,
             consecutive_weak=context.memory.consecutive_weak,
             previous_questions="\n".join(
-                f"- {q}" for q in previous_questions
+                f"- {q}" for q in previous_questions[-6:]
             )
             or "none yet",
         )
@@ -263,7 +269,10 @@ class PromptBuilder:
         not_tested_str = ", ".join(not_tested) if not_tested else "none"
 
         return self._templates["generate_feedback"].format(
-            transcript=context.transcript_excerpt,
+            # Feedback runs ONCE at the end and must reason over the whole
+            # interview, so it always gets the full transcript — the rolling
+            # window only applies to per-turn prompts.
+            transcript=context.memory.format_transcript(),
             candidate_summary=context.candidate.summary,
             aggregate_summary=context.aggregate_summary,
             assessment_state=assessment_str,

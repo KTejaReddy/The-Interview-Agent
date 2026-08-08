@@ -22,6 +22,7 @@ distinct curriculum days were covered.
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -148,25 +149,34 @@ class InterviewManager:
         self, session: InterviewSession, message: str
     ) -> InterviewTurnResult:
         """Advance the conversation one turn and return the server reply."""
+        t0 = time.perf_counter()
         await self._sessions.sweep_expired()
         # Record the candidate's utterance before dispatching.
         self._append(session, "candidate", message)
         state = session.state_machine.current
 
         if state == InterviewState.START:
-            return await self._begin(session)
-        if state == InterviewState.INTRODUCTION:
-            return await self._after_intro(session)
-        if state in (InterviewState.QUESTIONING, InterviewState.FOLLOW_UP):
-            return await self._handle_answer(session, message)
-        if state == InterviewState.FINAL_QUESTION:
-            return await self._finalize(session)
-        if state == InterviewState.DONE:
-            return self._final_result(session)
+            result = await self._begin(session)
+        elif state == InterviewState.INTRODUCTION:
+            result = await self._after_intro(session)
+        elif state in (InterviewState.QUESTIONING, InterviewState.FOLLOW_UP):
+            result = await self._handle_answer(session, message)
+        elif state == InterviewState.FINAL_QUESTION:
+            result = await self._finalize(session)
+        elif state == InterviewState.DONE:
+            result = self._final_result(session)
+        else:
+            raise InvalidStateTransitionError(
+                f"Unhandled interview state: {state.value}"
+            )
 
-        raise InvalidStateTransitionError(
-            f"Unhandled interview state: {state.value}"
+        logger.info(
+            "turn session=%s state=%s total_ms=%d",
+            session.session_id,
+            result.state,
+            (time.perf_counter() - t0) * 1000,
         )
+        return result
 
     # ------------------------------------------------------------------ phases
 

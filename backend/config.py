@@ -102,6 +102,21 @@ class Settings:
     llm_provider: str = os.getenv("LLM_PROVIDER", "groq")
     llm_base_url: str = os.getenv("GROQ_BASE_URL", os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1"))
     llm_model: str = os.getenv("GROQ_MODEL", os.getenv("LLM_MODEL", "llama-3.3-70b-versatile"))
+    #: Fast model used for lightweight conversational turns (short follow-ups
+    #: on non-substantive verdicts).  Must be an existing configured model —
+    #: it defaults to a model already in the fallback chain, so no new API
+    #: key or provider is ever required.
+    llm_fast_model: str = os.getenv("LLM_FAST_MODEL", "llama-3.1-8b-instant")
+    #: Output budget for conversational turns (evaluation / question /
+    #: follow-up).  The interviewer answers in 1-3 short sentences, so 800
+    #: tokens of headroom only delays every turn; feedback keeps the full
+    #: ``llm_max_tokens`` budget.
+    llm_turn_max_tokens: int = int(os.getenv("LLM_TURN_MAX_TOKENS", "300"))
+    #: Recent turns kept verbatim in prompts; older turns are compressed into
+    #: the structured interview memory (aggregate summary + notable
+    #: statements), so token count stays flat as the interview grows while
+    #: earlier claims, mistakes and contradictions are never lost.
+    transcript_window: int = int(os.getenv("TRANSCRIPT_WINDOW", "6"))
     llm_fallback_models: list[str] = field(
         default_factory=lambda: _env_list(
             "LLM_FALLBACK_MODELS",
