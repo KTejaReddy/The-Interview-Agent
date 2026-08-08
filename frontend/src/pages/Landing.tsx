@@ -1,11 +1,10 @@
 import { useState, useMemo } from "react";
 import { useInterview } from "../context/InterviewContext";
-import type { Page, CandidateSummary } from "../types";
+import type { Page } from "../types";
 import { ErrorBanner } from "../components/ErrorBanner";
-import { Brand } from "../components/Brand";
-import { CandidateCharacter } from "../components/CandidateCharacter";
-import { CandidateDrawer } from "../components/CandidateDrawer";
-import { Search, ChevronRight, UserCircle, Briefcase, BookOpen, Presentation } from "lucide-react";
+import { Navigation } from "../components/Navigation";
+import { RealisticAvatar } from "../components/CandidateCharacter";
+import { Search, ArrowRight, CheckCircle2, Users, CalendarDays, MessageSquare, Zap, SlidersHorizontal, LayoutGrid, List } from "lucide-react";
 
 interface LandingProps {
   onNavigate: (page: Page) => void;
@@ -14,10 +13,8 @@ interface LandingProps {
 export function Landing({ onNavigate }: LandingProps) {
   const { candidates, candidatesLoading, health, error, dismissError, startInterview } = useInterview();
   
-  const [selectedCandidate, setSelectedCandidate] = useState<CandidateSummary | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "strong" | "developing">("all");
-  const [hoveredCandidate, setHoveredCandidate] = useState<string | null>(null);
 
   const filteredCandidates = useMemo(() => {
     return candidates.filter(c => {
@@ -36,188 +33,181 @@ export function Landing({ onNavigate }: LandingProps) {
     onNavigate("interview");
   };
 
-  return (
-    <div className="relative min-h-screen bg-background selection:bg-accent-500/20">
-      {/* Navbar */}
-      <nav className="relative z-50 flex items-center justify-between px-8 py-6 w-full max-w-7xl mx-auto border-b border-surface-200">
-        <Brand />
-        <div className="hidden md:flex items-center gap-10 text-sm font-medium text-base-700">
-          <a href="#how-it-works" className="hover:text-base-900 transition-colors">How it works</a>
-          <a href="#candidates" className="hover:text-base-900 transition-colors">Candidates</a>
-          <a href="#" className="hover:text-base-900 transition-colors">The Interview</a>
-        </div>
-        <a href="#candidates" className="px-5 py-2.5 rounded-full bg-base-900 text-white text-sm font-semibold hover:bg-base-800 transition-colors">
-          Start an Interview
-        </a>
-      </nav>
+  const curriculumDaysTotal = health?.curriculumDays || 31;
 
-      <main className="relative z-10 mx-auto max-w-7xl px-6 pb-32">
+  return (
+    <div className="relative min-h-screen bg-background selection:bg-accent-500/30 overflow-x-hidden text-gray-200">
+      
+      <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGg0MHY0MEgwem0yMCAyMGMxLjEgMCAyLS45IDItMmMwLTEuMS0uOS0yLTItMnMtMiAuOS0yIDJjMCAxLjEuOSAyIDIgMnoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMiIgZmlsbC1ydWxlPSJldmVub2RkIi8+PC9zdmc+')] opacity-[0.15]" />
+      <div className="bg-orb-1 top-[-10%] left-[-10%] w-[1000px] h-[1000px] mix-blend-screen" />
+      <div className="bg-orb-2 bottom-[10%] right-[-10%] w-[800px] h-[800px] mix-blend-screen" />
+
+      <Navigation />
+
+      <main className="relative z-10 mx-auto max-w-[1440px] px-6 py-12">
         {error && (
-          <div className="mt-8">
+          <div className="mb-6">
             <ErrorBanner message={error} onDismiss={dismissError} />
           </div>
         )}
         
-        {/* Editorial Hero */}
-        <section className="pt-32 pb-24 flex flex-col lg:flex-row items-center justify-between gap-16">
-          <div className="lg:w-1/2">
-            <h1 className="font-serif text-6xl md:text-7xl font-black text-base-950 leading-[1.1] mb-8">
-              Every candidate <br />
-              <span className="text-base-600">has a different story.</span>
+        {/* Split Hero Section */}
+        <section className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-12 mb-16">
+          <div className="max-w-2xl">
+            <h1 className="text-4xl md:text-[54px] font-bold text-white leading-[1.1] tracking-tight mb-4">
+              Find the right candidate.<br />
+              <span className="font-serif italic text-base-300">The interview already knows their journey.</span>
             </h1>
-            <h2 className="text-2xl font-medium text-base-800 mb-6">
-              The interviewer should know it.
-            </h2>
-            <p className="text-lg text-base-600 leading-relaxed mb-10 max-w-lg">
-              AI Interview Agent turns a candidate's actual learning journey into a technical conversation — adapting questions, difficulty and follow-ups as the interview unfolds.
+            <p className="text-sm md:text-[15px] text-base-400 leading-relaxed max-w-xl">
+              Pick a journey — the interview adapts to what they actually built across the ABTalks AI Engineering Cohort.
             </p>
-            <div className="flex items-center gap-6">
-              <a href="#candidates" className="inline-flex items-center gap-2 px-8 py-4 bg-accent-500 text-white rounded-xl font-bold hover:bg-accent-600 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5">
-                Meet the candidates <ChevronRight className="w-4 h-4" />
-              </a>
-              <a href="#how-it-works" className="font-semibold text-base-700 hover:text-base-900 transition-colors">
-                How it works
-              </a>
-            </div>
           </div>
           
-          <div className="lg:w-1/2 flex justify-center">
-            {/* Hero Character Illustration */}
-            <div className="w-[400px] h-[400px] relative editorial-card bg-surface-100 flex items-center justify-center p-8 overflow-hidden">
-              <div className="absolute inset-0 bg-paper-texture opacity-50" />
-              <CandidateCharacter name="Hero Example" role="AI Engineer" readiness={90} isHovered={true} />
+          <div className="flex flex-wrap lg:flex-nowrap items-center gap-4">
+            <MetricCard icon={<Users className="w-5 h-5 text-accent-400" />} value="20" label="Candidate Profiles" />
+            <MetricCard icon={<CalendarDays className="w-5 h-5 text-accent-purple" />} value="31" label="Curriculum Days" />
+            <MetricCard icon={<MessageSquare className="w-5 h-5 text-accent-cyan" />} value="8–14" label="Questions / Interview" />
+            <MetricCard icon={<Zap className="w-5 h-5 text-amber-400" />} value="<1s" label="First Response" />
+          </div>
+        </section>
+
+        {/* Toolbar */}
+        <section className="flex flex-col md:flex-row items-center justify-between gap-4 mb-8 bg-surface-50/50 backdrop-blur-md border border-white/5 rounded-2xl p-2 pl-4">
+          <div className="flex items-center gap-1 w-full md:w-auto overflow-x-auto no-scrollbar">
+            <button onClick={() => setFilter("all")} className={`px-4 py-2 rounded-xl text-[13px] font-medium whitespace-nowrap transition-colors ${filter === "all" ? "bg-accent-600 text-white" : "text-base-400 hover:text-white hover:bg-surface-100"}`}>All</button>
+            <button onClick={() => setFilter("strong")} className={`px-4 py-2 rounded-xl text-[13px] font-medium whitespace-nowrap transition-colors ${filter === "strong" ? "bg-accent-600 text-white" : "text-base-400 hover:text-white hover:bg-surface-100"}`}>Interview Ready</button>
+            <button className="px-4 py-2 rounded-xl text-[13px] font-medium whitespace-nowrap text-base-400 hover:text-white hover:bg-surface-100">Most Complete</button>
+            <button onClick={() => setFilter("developing")} className={`px-4 py-2 rounded-xl text-[13px] font-medium whitespace-nowrap transition-colors ${filter === "developing" ? "bg-accent-600 text-white" : "text-base-400 hover:text-white hover:bg-surface-100"}`}>Needs Practice</button>
+          </div>
+          
+          <div className="flex items-center gap-4 ml-auto w-full md:w-auto">
+            <div className="flex items-center gap-2 text-[13px] text-base-400 font-medium px-4 py-2 border-r border-white/10">
+              <SlidersHorizontal className="w-4 h-4" />
+              <span>Sort: Readiness</span>
+            </div>
+            <div className="relative w-full md:w-48 mr-2">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-base-500" />
+              <input 
+                type="text" 
+                placeholder="Search candidates..." 
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-surface-100/50 border border-transparent rounded-lg text-[13px] text-white placeholder:text-base-500 focus:outline-none focus:border-accent-500 focus:bg-surface-200 transition-colors"
+              />
+            </div>
+            <div className="hidden md:flex items-center gap-1 bg-surface-100 p-1 rounded-lg">
+              <button className="p-1.5 bg-surface-300 rounded text-white shadow-sm"><LayoutGrid className="w-4 h-4" /></button>
+              <button className="p-1.5 text-base-400 hover:text-white transition-colors"><List className="w-4 h-4" /></button>
             </div>
           </div>
         </section>
 
-        {/* How It Works (Horizontal Story) */}
-        <section id="how-it-works" className="py-24 border-t border-surface-200">
-          <div className="grid md:grid-cols-4 gap-12">
-            {[
-              { num: "01", title: "Understand the journey", icon: BookOpen },
-              { num: "02", title: "Meet the candidate", icon: UserCircle },
-              { num: "03", title: "Have the conversation", icon: Presentation },
-              { num: "04", title: "Read the report", icon: Briefcase },
-            ].map((step, i) => (
-              <div key={i} className="flex flex-col gap-4">
-                <span className="font-serif text-5xl text-base-300 font-black">{step.num}</span>
-                <step.icon className="w-8 h-8 text-accent-500" />
-                <h3 className="font-serif text-xl font-bold text-base-900">{step.title}</h3>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Candidate Selection */}
-        <section id="candidates" className="py-24 border-t border-surface-200">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-16">
-            <div>
-              <h2 className="font-serif text-4xl font-bold text-base-900 mb-3">Who's ready?</h2>
-              <p className="text-base-600">Select a candidate to review their dossier and start an interview.</p>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-base-500" />
-                <input 
-                  type="text" 
-                  placeholder="Search candidates..." 
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  className="w-full md:w-64 pl-12 pr-4 py-3 bg-white border border-surface-200 rounded-xl text-sm text-base-900 placeholder:text-base-400 focus:outline-none focus:border-accent-500 focus:ring-1 focus:ring-accent-500 transition-all editorial-shadow"
-                />
-              </div>
-              <select 
-                value={filter}
-                onChange={e => setFilter(e.target.value as any)}
-                className="bg-white border border-surface-200 rounded-xl px-5 py-3 text-sm text-base-700 focus:outline-none focus:border-accent-500 editorial-shadow appearance-none cursor-pointer"
-              >
-                <option value="all">All Profiles</option>
-                <option value="strong">Interview Ready</option>
-                <option value="developing">Needs Practice</option>
-              </select>
-            </div>
-          </div>
-
+        {/* Grid */}
+        <section id="candidates">
           {candidatesLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {[...Array(6)].map((_, i) => (
-                <div key={i} className="h-[400px] rounded-2xl bg-surface-100 animate-pulse border border-surface-200" />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {[...Array(12)].map((_, i) => (
+                <div key={i} className="h-72 rounded-2xl bg-surface-50 animate-pulse border border-white/5" />
               ))}
             </div>
           ) : filteredCandidates.length === 0 ? (
-            <div className="text-center py-24 editorial-card">
-              <p className="text-base-500">No candidates match your criteria.</p>
+            <div className="text-center py-24 glass-card rounded-2xl">
+              <p className="text-base-400 text-[15px]">No candidates match your search criteria.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {filteredCandidates.map(candidate => {
-                const readiness = candidate.missionsCompleted ? Math.round((candidate.missionsCompleted / (health?.curriculumDays || 31)) * 100) : 0;
-                const isHovered = hoveredCandidate === candidate.id;
+                const readiness = candidate.missionsCompleted ? Math.round((candidate.missionsCompleted / curriculumDaysTotal) * 100) : 0;
+                const topics = [1, 7, 12, 16, 22, 27, 31].filter(d => d <= (candidate.missionsCompleted || 0) + 5);
                 
                 return (
                   <div 
                     key={candidate.id}
-                    onMouseEnter={() => setHoveredCandidate(candidate.id)}
-                    onMouseLeave={() => setHoveredCandidate(null)}
-                    onClick={() => setSelectedCandidate(candidate)}
-                    className="editorial-card p-6 flex flex-col cursor-pointer transition-all duration-300 hover:shadow-xl hover:-translate-y-1 bg-white relative overflow-hidden group"
+                    className="group bg-[rgba(20,24,35,0.7)] backdrop-blur-xl border border-white/5 rounded-[20px] p-5 flex flex-col transition-all duration-300 hover:bg-[rgba(25,30,42,0.8)] hover:border-white/10 hover:shadow-xl hover:shadow-accent-500/5 hover:-translate-y-1 relative overflow-hidden"
                   >
-                    {/* Character Area */}
-                    <div className="h-48 w-full bg-surface-50 rounded-xl mb-6 relative border border-surface-200 flex items-center justify-center overflow-hidden">
-                      <div className="absolute inset-0 bg-paper-texture opacity-30" />
-                      <div className="w-40 h-40">
-                        <CandidateCharacter 
-                          name={candidate.name} 
-                          role={candidate.role} 
-                          readiness={readiness} 
-                          isHovered={isHovered}
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-accent-600 to-accent-purple opacity-0 group-hover:opacity-100 transition-opacity" />
+                    
+                    {/* Header */}
+                    <div className="flex items-start justify-between mb-5">
+                      <div className="flex items-center gap-4">
+                        <div className="w-[60px] h-[60px] shrink-0 border border-white/10 rounded-[14px] bg-surface-100 shadow-inner">
+                          <RealisticAvatar name={candidate.name} id={candidate.id} />
+                        </div>
+                        <div className="min-w-0 flex flex-col justify-center">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <h4 className="text-[15px] font-bold text-white truncate w-32">
+                              {candidate.name || candidate.id}
+                            </h4>
+                            <CheckCircle2 className="w-3.5 h-3.5 text-accent-cyan shrink-0" />
+                          </div>
+                          <p className="text-[10px] font-semibold text-base-400 uppercase tracking-widest truncate w-32">
+                            {candidate.role}
+                          </p>
+                        </div>
+                      </div>
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold flex shrink-0 border ${
+                        readiness >= 80 ? 'bg-mint-500/10 text-mint-400 border-mint-500/20 shadow-[0_0_10px_rgba(52,211,153,0.1)]' : 
+                        readiness >= 50 ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.1)]' : 
+                        'bg-red-500/10 text-red-400 border-red-500/20'
+                      }`}>
+                        {readiness}% READY
+                      </span>
+                    </div>
+
+                    {/* Stats */}
+                    <div className="grid grid-cols-3 gap-2 mb-5">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[9px] font-bold text-base-500 uppercase tracking-widest">Missions</span>
+                        <span className="text-[17px] font-bold text-white">{candidate.missionsCompleted || 0}</span>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[9px] font-bold text-base-500 uppercase tracking-widest">Days</span>
+                        <span className="text-[17px] font-bold text-white">{candidate.missionsCompleted || 0}<span className="text-[11px] text-base-500 font-semibold">/{curriculumDaysTotal}</span></span>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[9px] font-bold text-base-500 uppercase tracking-widest">Readiness</span>
+                        <span className={`text-[17px] font-bold ${readiness >= 80 ? 'text-mint-400' : readiness >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{readiness}%</span>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="mb-5">
+                      <div className="flex items-center justify-between text-[9px] font-bold text-base-400 uppercase tracking-widest mb-2">
+                        <span>Cohort Progress</span>
+                        <span>{candidate.missionsCompleted || 0} / {curriculumDaysTotal}</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-surface-200 rounded-full overflow-hidden flex">
+                        <div 
+                          className={`h-full rounded-full transition-all duration-1000 ${readiness >= 80 ? 'bg-mint-500' : readiness >= 50 ? 'bg-amber-400' : 'bg-red-400'}`}
+                          style={{ width: `${readiness}%` }}
                         />
                       </div>
                     </div>
 
-                    {/* Info Area */}
-                    <div className="mb-6 flex-1">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <h4 className="font-serif text-xl font-bold text-base-900 truncate">{candidate.name || candidate.id}</h4>
-                          <p className="text-xs font-medium text-base-500 mt-1 uppercase tracking-wider">{candidate.role}</p>
-                        </div>
-                        <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest ${readiness >= 70 ? 'bg-mint-500/10 text-mint-500' : 'bg-amber-500/10 text-amber-500'}`}>
-                          {readiness}% Ready
+                    {/* Chips */}
+                    <div className="mb-6 flex flex-wrap gap-1.5">
+                      {topics.slice(0, 5).map(day => (
+                        <span key={day} className={`text-[9px] px-2 py-0.5 rounded-md font-mono font-bold border ${
+                          day <= (candidate.missionsCompleted || 0) 
+                            ? 'bg-mint-500/10 text-mint-400 border-mint-500/20'
+                            : 'bg-surface-100 text-base-500 border-white/5'
+                        }`}>
+                          D{day.toString().padStart(2, '0')}
                         </span>
-                      </div>
-                      
-                      {/* Skill Journey Mini */}
-                      <div className="mt-5">
-                        <div className="flex justify-between text-[10px] uppercase tracking-widest font-bold text-base-400 mb-2">
-                          <span>Cohort Journey</span>
-                          <span>{candidate.missionsCompleted || 0} / {health?.curriculumDays || 31}</span>
-                        </div>
-                        <div className="flex items-center gap-1 w-full h-2">
-                          {[...Array(10)].map((_, i) => {
-                            const isFilled = i < Math.floor((readiness / 100) * 10);
-                            return (
-                              <div key={i} className={`h-full flex-1 rounded-full ${isFilled ? (readiness >= 70 ? 'bg-accent-500' : 'bg-amber-400') : 'bg-surface-200'}`} />
-                            )
-                          })}
-                        </div>
-                      </div>
+                      ))}
                     </div>
 
-                    {/* Actions */}
-                    <div className="flex items-center gap-3 mt-auto">
+                    {/* CTA */}
+                    <div className="mt-auto flex items-center justify-between border-t border-white/5 pt-4">
+                      <span className="text-[10px] font-medium text-base-500 flex items-center gap-1.5">
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        {topics.length} topics
+                      </span>
                       <button 
                         onClick={(e) => { e.stopPropagation(); handleStart(candidate.id); }}
-                        className="flex-1 py-3 bg-base-900 hover:bg-base-800 text-white rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                        className="px-4 py-2 bg-accent-600 hover:bg-accent-500 text-white rounded-lg text-[13px] font-bold transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(79,70,229,0.2)] hover:shadow-[0_0_20px_rgba(79,70,229,0.4)] group/btn"
                       >
-                        Interview {candidate.name.split(' ')[0]}
-                      </button>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); setSelectedCandidate(candidate); }}
-                        className="px-4 py-3 bg-surface-100 hover:bg-surface-200 text-base-700 rounded-xl text-sm font-medium transition-colors"
-                      >
-                        Dossier
+                        Start Interview <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover/btn:translate-x-0.5" />
                       </button>
                     </div>
                   </div>
@@ -227,14 +217,20 @@ export function Landing({ onNavigate }: LandingProps) {
           )}
         </section>
       </main>
+    </div>
+  );
+}
 
-      <CandidateDrawer 
-        candidate={selectedCandidate} 
-        isOpen={selectedCandidate !== null} 
-        onClose={() => setSelectedCandidate(null)}
-        onStartInterview={(id) => handleStart(id)}
-        curriculumDays={health?.curriculumDays || 31}
-      />
+function MetricCard({ icon, value, label }: { icon: React.ReactNode, value: string, label: string }) {
+  return (
+    <div className="bg-surface-50/60 backdrop-blur-md border border-white/5 rounded-2xl p-4 flex flex-col justify-center min-w-[130px]">
+      <div className="flex items-center gap-3 mb-2">
+        <div className="w-8 h-8 rounded-lg bg-surface-100 flex items-center justify-center border border-white/5">
+          {icon}
+        </div>
+        <span className="text-2xl font-bold text-white leading-none">{value}</span>
+      </div>
+      <span className="text-[10px] font-medium text-base-400 uppercase tracking-widest">{label}</span>
     </div>
   );
 }

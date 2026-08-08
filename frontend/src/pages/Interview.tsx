@@ -6,7 +6,7 @@ import { ErrorBanner } from "../components/ErrorBanner";
 import { LoadingOverlay } from "../components/LoadingOverlay";
 import { SessionIndicator } from "../components/SessionIndicator";
 import { InterviewerCharacter } from "../components/InterviewerCharacter";
-import { CandidateCharacter } from "../components/CandidateCharacter";
+import { RealisticAvatar } from "../components/CandidateCharacter";
 import { useInterview } from "../context/InterviewContext";
 import { useAutoScroll } from "../hooks/useAutoScroll";
 import type { Page } from "../types";
@@ -65,36 +65,37 @@ export function Interview({ onNavigate }: InterviewProps) {
     }
   };
 
-  // Determine interviewer state
   let interviewerState: 'idle' | 'thinking' | 'speaking' | 'listening' | 'frustrated' = 'idle';
   if (interviewerTyping) interviewerState = 'thinking';
   else if (messages.length > 0 && messages[messages.length - 1].role === 'candidate') interviewerState = 'listening';
   
-  // A subtle heuristic for "frustration" - if the candidate says "I don't know" multiple times
   const idkCount = messages.filter(m => m.role === 'candidate' && m.text.toLowerCase().includes("don't know")).length;
   if (idkCount > 1 && interviewerTyping) interviewerState = 'frustrated';
 
   return (
-    <div className="flex h-screen flex-col bg-background relative overflow-hidden font-sans">
-      <div className="absolute inset-0 bg-paper-texture opacity-30 pointer-events-none" />
+    <div className="flex h-screen flex-col bg-background relative overflow-hidden font-sans text-gray-200">
+      
+      {/* Background Atmosphere */}
+      <div className="bg-orb-1 top-[10%] left-[-10%] w-[800px] h-[800px]" />
+      <div className="bg-orb-2 bottom-[20%] right-[-10%] w-[600px] h-[600px]" />
 
       {/* Header */}
-      <header className="relative z-20 border-b border-surface-200 bg-surface-50/80 backdrop-blur-md">
-        <div className="mx-auto flex w-full items-center justify-between px-8 py-4">
+      <header className="relative z-20 border-b border-white/5 bg-surface-50/80 backdrop-blur-xl">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-8">
             <button onClick={() => onNavigate("landing")} aria-label="Back to landing" className="hover:opacity-80 transition-opacity">
               <Brand size="sm" />
             </button>
-            <div className="hidden md:flex h-6 w-px bg-surface-200" />
+            <div className="hidden md:flex h-6 w-px bg-white/10" />
             
             <div className="hidden md:flex items-center gap-6">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-base-500">Progress</span>
-                <span className="font-serif font-bold text-base-900">Q{questionNumber} <span className="text-base-400 font-sans text-xs">/ {totalQuestions}</span></span>
+                <span className="font-bold text-white text-sm">Q{questionNumber} <span className="text-base-500 font-medium text-xs">/ {totalQuestions}</span></span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-base-500">Coverage</span>
-                <span className="font-serif font-bold text-base-900">{daysCovered.length} <span className="text-base-400 font-sans text-xs">days</span></span>
+                <span className="font-bold text-white text-sm">{daysCovered.length} <span className="text-base-500 font-medium text-xs">days</span></span>
               </div>
             </div>
           </div>
@@ -106,45 +107,41 @@ export function Interview({ onNavigate }: InterviewProps) {
       </header>
 
       {/* Main Layout */}
-      <div className="flex-1 flex overflow-hidden relative z-10">
+      <div className="flex-1 flex overflow-hidden relative z-10 max-w-7xl mx-auto w-full">
         
-        {/* Left Sidebar: Interviewer & Candidate Status */}
-        <aside className="hidden lg:flex w-80 border-r border-surface-200 bg-surface-50 flex-col p-6 overflow-y-auto">
+        {/* Left Sidebar: Profiles */}
+        <aside className="hidden lg:flex w-72 flex-col p-6 overflow-y-auto border-r border-white/5">
           
-          {/* Interviewer Profile */}
-          <div className="mb-10 text-center">
-            <div className="w-32 h-32 mx-auto bg-surface-100 rounded-2xl border border-surface-200 mb-4 overflow-hidden relative">
-              <div className="absolute inset-0 bg-paper-texture opacity-50" />
+          {/* Interviewer */}
+          <div className="mb-10 text-center glass-card rounded-2xl p-6">
+            <div className="w-24 h-24 mx-auto bg-surface-200/50 rounded-full border border-white/10 mb-4 flex items-center justify-center pt-2 overflow-hidden shadow-inner">
               <InterviewerCharacter state={interviewerState} />
             </div>
-            <h3 className="font-serif text-xl font-bold text-base-900">Alex</h3>
-            <p className="text-xs font-semibold uppercase tracking-widest text-base-500 mt-1">Technical Interviewer</p>
+            <h3 className="text-lg font-bold text-white">Alex</h3>
+            <p className="text-[9px] font-bold uppercase tracking-widest text-accent-400 mt-1">Technical Interviewer</p>
           </div>
 
-          <hr className="border-surface-200 mb-8" />
-
-          {/* Candidate Profile summary (mocking candidate details) */}
-          <div className="mb-6">
-            <h4 className="text-[10px] font-bold uppercase tracking-widest text-base-500 mb-4">Candidate</h4>
+          {/* Candidate */}
+          <div className="glass-card rounded-2xl p-5 border border-white/5">
+            <h4 className="text-[10px] font-bold uppercase tracking-widest text-base-500 mb-4 border-b border-white/5 pb-2">Candidate</h4>
             <div className="flex items-center gap-4 mb-4">
-              <div className="w-16 h-16 bg-surface-100 rounded-xl border border-surface-200 overflow-hidden relative shrink-0">
-                <CandidateCharacter name="Candidate" role="Applicant" readiness={80} />
+              <div className="w-12 h-12 bg-surface-200/50 rounded-full border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
+                <RealisticAvatar name="Candidate" />
               </div>
               <div>
-                <p className="font-serif font-bold text-base-900 leading-tight">Your Profile</p>
-                <p className="text-[10px] font-semibold text-base-500 uppercase mt-1">Ready for review</p>
+                <p className="font-bold text-white text-sm">Your Profile</p>
+                <p className="text-[9px] font-bold text-mint-400 uppercase mt-0.5 tracking-widest">In Progress</p>
               </div>
             </div>
           </div>
-
         </aside>
 
-        {/* Right Panel: Transcript & Input */}
-        <main className="flex-1 flex flex-col bg-white relative">
+        {/* Right Panel: Conversation */}
+        <main className="flex-1 flex flex-col relative">
           
           {/* Transcript Area */}
-          <div ref={transcriptRef} className="flex-1 overflow-y-auto px-6 py-10 md:px-16 scroll-smooth">
-            <div className="max-w-3xl mx-auto flex flex-col gap-10 pb-10">
+          <div ref={transcriptRef} className="flex-1 overflow-y-auto px-4 py-8 md:px-12 scroll-smooth">
+            <div className="max-w-2xl mx-auto flex flex-col gap-8 pb-10">
               
               {error && (
                 <div className="sticky top-0 z-30 mb-8">
@@ -153,9 +150,9 @@ export function Interview({ onNavigate }: InterviewProps) {
               )}
 
               {messages.length === 0 && !interviewerTyping ? (
-                <div className="py-20 text-center">
-                  <h3 className="font-serif text-2xl font-bold text-base-900 mb-2">The interview is starting</h3>
-                  <p className="text-base-500">Alex is reviewing your journey.</p>
+                <div className="py-20 text-center opacity-70">
+                  <h3 className="text-xl font-bold text-white mb-2">The interview is starting</h3>
+                  <p className="text-base-400 text-sm">Alex is reviewing your journey.</p>
                 </div>
               ) : (
                 messages.map((message, index) => (
@@ -169,11 +166,11 @@ export function Interview({ onNavigate }: InterviewProps) {
 
               {interviewerTyping && (
                 <div className="flex flex-col gap-2 animate-fade-in pl-14">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-base-400">Alex is thinking</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-base-500">Alex is typing</span>
                   <div className="flex items-center gap-1.5 h-6">
-                    <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent-400" style={{ animationDelay: "0ms" }} />
-                    <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent-400" style={{ animationDelay: "150ms" }} />
-                    <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent-400" style={{ animationDelay: "300ms" }} />
+                    <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent-500" style={{ animationDelay: "0ms" }} />
+                    <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent-500" style={{ animationDelay: "150ms" }} />
+                    <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent-500" style={{ animationDelay: "300ms" }} />
                   </div>
                 </div>
               )}
@@ -181,17 +178,17 @@ export function Interview({ onNavigate }: InterviewProps) {
           </div>
 
           {/* Input Area */}
-          <footer className="border-t border-surface-200 bg-surface-50 p-6 md:px-16">
-            <div className="max-w-3xl mx-auto">
+          <footer className="bg-surface-50/50 backdrop-blur-md p-4 md:px-12 border-t border-white/5">
+            <div className="max-w-2xl mx-auto">
               
               {currentDay && (
-                <div className="mb-4 flex items-center justify-between">
+                <div className="mb-3 flex items-center justify-between px-1">
                   <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-accent-500">Current Topic</span>
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-accent-400">Current Topic</span>
                     <DayBadge day={currentDay} topic={currentTopic} />
                   </div>
                   {interviewComplete && (
-                    <span className="text-xs font-semibold text-mint-500">
+                    <span className="text-xs font-semibold text-mint-400">
                       Interview complete — preparing report...
                     </span>
                   )}
@@ -213,19 +210,19 @@ export function Interview({ onNavigate }: InterviewProps) {
                         ? "Interview concluded."
                         : "Explain your approach..."
                   }
-                  className="w-full resize-none rounded-2xl border border-surface-300 bg-white px-6 py-5 pr-20 text-[15px] leading-relaxed text-base-900 placeholder:text-base-400 focus:outline-none focus:border-accent-500 focus:ring-4 focus:ring-accent-500/10 transition-all editorial-shadow min-h-[100px] max-h-[300px]"
+                  className="w-full resize-none rounded-xl border border-white/10 bg-surface-100 px-5 py-4 pr-16 text-sm leading-relaxed text-white placeholder:text-base-500 focus:outline-none focus:border-accent-500 focus:ring-1 focus:ring-accent-500 transition-all shadow-inner min-h-[90px] max-h-[300px]"
                   autoFocus
                 />
                 
-                <div className="absolute right-4 bottom-4 flex items-center gap-3">
-                  <div className="hidden sm:flex flex-col items-end gap-0.5 text-[9px] text-base-400 font-medium mr-2">
-                    <span><kbd className="font-sans px-1 rounded bg-surface-100 border border-surface-200">Enter</kbd> to send</span>
-                    <span><kbd className="font-sans px-1 rounded bg-surface-100 border border-surface-200">Shift</kbd> + <kbd className="font-sans px-1 rounded bg-surface-100 border border-surface-200">Enter</kbd> for line</span>
+                <div className="absolute right-3 bottom-3 flex items-center gap-2">
+                  <div className="hidden sm:flex flex-col items-end gap-0.5 text-[8px] text-base-500 font-semibold mr-1 uppercase tracking-widest">
+                    <span>Enter ↵</span>
+                    <span>Shift+Enter ↵</span>
                   </div>
                   <button
                     type="submit"
                     disabled={!canSend || !draft.trim()}
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-base-900 text-white transition-all hover:bg-base-800 active:scale-95 disabled:opacity-40"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-600 text-white transition-all hover:bg-accent-500 active:scale-95 disabled:opacity-30 shadow-lg shadow-accent-600/20"
                   >
                     <Send className="w-4 h-4" />
                   </button>

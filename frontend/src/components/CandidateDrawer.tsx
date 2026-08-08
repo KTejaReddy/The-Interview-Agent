@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import { CandidateSummary } from "../types";
-import { CandidateCharacter } from "./CandidateCharacter";
+import { RealisticAvatar } from "./CandidateCharacter";
 
 interface CandidateDrawerProps {
   candidate: CandidateSummary | null;
@@ -47,12 +47,7 @@ export function CandidateDrawer({ candidate, isOpen, onClose, onStartInterview, 
 
           <div className="flex flex-col items-center text-center mt-8 mb-10">
             <div className="w-48 h-48 mb-6">
-              <CandidateCharacter 
-                name={candidate.name} 
-                role={candidate.role} 
-                readiness={readiness} 
-                isHovered={true}
-              />
+              <RealisticAvatar name={candidate.name} id={candidate.id} />
             </div>
             
             <h2 className="font-serif text-3xl font-bold text-base-900 mb-2">{candidate.name || candidate.id}</h2>
