@@ -5,11 +5,6 @@ interface CoverageTrackerProps {
   minQuestions?: number;
 }
 
-/**
- * Live curriculum-coverage panel: every distinct day the interview has
- * reached, plus progress toward the minimum requirements (8 questions,
- * 4 curriculum days).
- */
 export function CoverageTracker({
   daysCovered,
   minDays = 4,
@@ -21,16 +16,18 @@ export function CoverageTracker({
   const questionComplete = totalQuestions >= minQuestions;
 
   return (
-    <div className="w-56 rounded-2xl border border-base-700 bg-base-800/70 p-4 backdrop-blur">
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+    <div className="w-56 glass-card rounded-2xl p-5 shadow-lg relative overflow-hidden group">
+      <div className="absolute inset-0 bg-premium-gradient opacity-0 group-hover:opacity-5 transition-opacity duration-500" />
+      
+      <div className="flex items-center justify-between mb-4 relative z-10">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
           Curriculum coverage
         </p>
         <span
-          className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold ${
+          className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold shadow-inner border ${
             dayComplete
-              ? "bg-mint-500/20 text-mint-400"
-              : "bg-accent-500/15 text-accent-400"
+              ? "bg-mint-500/10 text-mint-400 border-mint-500/20"
+              : "bg-surface-300 text-slate-300 border-white/5"
           }`}
         >
           {dayCount}
@@ -38,7 +35,7 @@ export function CoverageTracker({
       </div>
 
       {/* Requirement meter */}
-      <div className="mt-3 space-y-2">
+      <div className="space-y-4 relative z-10">
         <RequirementMeter
           label={`${minDays} curriculum days`}
           value={Math.min(dayCount, minDays)}
@@ -54,24 +51,26 @@ export function CoverageTracker({
       </div>
 
       {/* Day chips */}
-      {daysCovered.length > 0 ? (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {daysCovered.map((day) => (
-            <span
-              key={day}
-              title={day}
-              className="inline-flex max-w-full items-center gap-1 rounded-full border border-mint-500/25 bg-mint-500/10 px-2 py-0.5 text-[11px] font-medium text-mint-300"
-            >
-              <span className="h-1 w-1 shrink-0 rounded-full bg-mint-400" />
-              <span className="truncate">{day}</span>
-            </span>
-          ))}
-        </div>
-      ) : (
-        <p className="mt-3 text-[11px] text-slate-500">
-          No curriculum days reached yet.
-        </p>
-      )}
+      <div className="mt-5 relative z-10">
+        {daysCovered.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {daysCovered.map((day) => (
+              <span
+                key={day}
+                title={day}
+                className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-white/5 bg-surface-200/80 px-2 py-1 text-[10px] font-semibold text-slate-300 shadow-inner"
+              >
+                <span className="h-1 w-1 shrink-0 rounded-full bg-accent-400" />
+                <span className="truncate">{day}</span>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[10px] text-slate-500 italic">
+            No curriculum days reached yet.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -87,18 +86,18 @@ function RequirementMeter({ label, value, target, complete }: RequirementMeterPr
   const percent = Math.min(100, (value / target) * 100);
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between text-[11px]">
-        <span className="text-slate-400">{label}</span>
-        <span className={complete ? "font-semibold text-mint-400" : "font-semibold text-slate-300"}>
+      <div className="mb-1.5 flex items-center justify-between text-[11px]">
+        <span className="text-slate-400 font-medium">{label}</span>
+        <span className={complete ? "font-bold text-mint-400" : "font-semibold text-slate-300"}>
           {value}/{target}
         </span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-base-700">
+      <div className="h-1.5 overflow-hidden rounded-full bg-surface-300/50 shadow-inner">
         <div
-          className={`h-full rounded-full transition-all duration-700 ${
+          className={`h-full rounded-full transition-all duration-1000 ${
             complete
-              ? "bg-gradient-to-r from-mint-500 to-emerald-400"
-              : "bg-gradient-to-r from-accent-600 to-indigo-400"
+              ? "bg-mint-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"
+              : "bg-accent-400 shadow-[0_0_8px_rgba(129,140,248,0.5)]"
           }`}
           style={{ width: `${percent}%` }}
         />

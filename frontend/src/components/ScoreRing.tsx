@@ -12,24 +12,19 @@ function scoreTone(score: number): string {
   return "#f87171"; // red
 }
 
-/**
- * Animated circular score display used on the feedback page.  Animates from
- * 0 to the final score on mount.
- */
 export function ScoreRing({ score, size = 120 }: ScoreRingProps) {
   const [progress, setProgress] = useState(0);
-  const radius = size / 2 - 10;
+  const radius = size / 2 - 12;
   const circumference = 2 * Math.PI * radius;
   const color = scoreTone(score);
 
   useEffect(() => {
     const start = performance.now();
-    const duration = 900;
+    const duration = 1200;
     let frame = 0;
     const tick = (now: number) => {
       const elapsed = now - start;
       const t = Math.min(1, elapsed / duration);
-      // ease-out cubic
       const eased = 1 - Math.pow(1 - t, 3);
       setProgress(Math.round(eased * score));
       if (t < 1) frame = requestAnimationFrame(tick);
@@ -46,14 +41,21 @@ export function ScoreRing({ score, size = 120 }: ScoreRingProps) {
       style={{ width: size, height: size }}
       aria-label={`Overall score ${progress} out of 100`}
     >
-      <svg width={size} height={size} className="-rotate-90">
+      <div 
+        className="absolute inset-0 rounded-full" 
+        style={{ 
+          background: `radial-gradient(circle, ${color}20 0%, transparent 60%)`,
+          filter: "blur(8px)" 
+        }} 
+      />
+      <svg width={size} height={size} className="-rotate-90 drop-shadow-2xl relative z-10">
         <circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke="rgba(148,163,184,0.15)"
-          strokeWidth="10"
+          stroke="rgba(255,255,255,0.05)"
+          strokeWidth="8"
         />
         <circle
           cx={size / 2}
@@ -61,18 +63,21 @@ export function ScoreRing({ score, size = 120 }: ScoreRingProps) {
           r={radius}
           fill="none"
           stroke={color}
-          strokeWidth="10"
+          strokeWidth="8"
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={dashOffset}
-          style={{ transition: "stroke-dashoffset 60ms linear" }}
+          style={{ 
+            transition: "stroke-dashoffset 60ms linear",
+            filter: `drop-shadow(0 0 6px ${color}80)`
+          }}
         />
       </svg>
-      <div className="absolute flex flex-col items-center">
-        <span className="text-3xl font-extrabold tracking-tight text-white">
+      <div className="absolute flex flex-col items-center z-20">
+        <span className="text-3xl font-black tracking-tighter text-white drop-shadow-md">
           {progress}
         </span>
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+        <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">
           / 100
         </span>
       </div>

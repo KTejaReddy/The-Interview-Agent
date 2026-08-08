@@ -1,20 +1,24 @@
 export function TypingIndicator() {
   return (
-    <div className="flex items-start gap-3 animate-fade-in">
-      <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent-500 to-mint-500 shadow-md shadow-accent-500/25">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-          <rect x="5" y="5" width="14" height="10" rx="2.5" fill="#0a0c1a" />
-          <circle cx="9.5" cy="10" r="1.1" fill="#818cf8" />
-          <circle cx="12" cy="10" r="1.1" fill="#818cf8" />
-          <circle cx="14.5" cy="10" r="1.1" fill="#818cf8" />
-          <path d="M5 18h14" stroke="#34d399" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
+    <div className="flex items-start gap-4 animate-fade-in">
+      <div className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-200 border border-white/10 shadow-lg shadow-black/20">
+        <div className="w-full h-full rounded-full bg-gradient-to-br from-accent-600/20 to-accent-purple/20 flex items-center justify-center">
+          <span className="font-bold text-accent-400 text-sm">A</span>
+        </div>
       </div>
-      <div className="rounded-2xl rounded-tl-sm border border-base-700 bg-base-800 px-4 py-3">
-        <div className="flex items-center gap-1.5">
-          <span className="h-2 w-2 animate-pulse-dot rounded-full bg-accent-400" style={{ animationDelay: "0ms" }} />
-          <span className="h-2 w-2 animate-pulse-dot rounded-full bg-accent-400" style={{ animationDelay: "150ms" }} />
-          <span className="h-2 w-2 animate-pulse-dot rounded-full bg-accent-400" style={{ animationDelay: "300ms" }} />
+      
+      <div className="flex flex-col gap-1 max-w-[85%]">
+        <div className="flex items-center gap-2 pl-1 mb-0.5">
+          <span className="text-xs font-semibold text-white">Alex</span>
+          <span className="text-[10px] text-slate-500 font-medium">is thinking</span>
+        </div>
+        
+        <div className="rounded-2xl rounded-tl-sm border border-white/5 bg-surface-100/80 px-5 py-4 shadow-lg backdrop-blur-sm w-fit">
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-2 animate-pulse-dot rounded-full bg-accent-400" style={{ animationDelay: "0ms" }} />
+            <span className="h-2 w-2 animate-pulse-dot rounded-full bg-accent-400" style={{ animationDelay: "150ms" }} />
+            <span className="h-2 w-2 animate-pulse-dot rounded-full bg-accent-400" style={{ animationDelay: "300ms" }} />
+          </div>
         </div>
       </div>
     </div>
