@@ -1,26 +1,46 @@
 import { Brand } from "./Brand";
+import { ArrowRight } from "lucide-react";
 
 export function Navigation() {
   return (
-    <nav className="relative z-50 flex items-center justify-between px-6 py-4 w-full max-w-[1440px] mx-auto">
+    <nav
+      className="relative z-50 flex items-center justify-between px-6 py-3.5 w-full max-w-[1500px] mx-auto"
+    >
+      {/* Brand */}
       <div className="flex-1">
         <Brand size="sm" />
       </div>
-      
-      <div className="hidden lg:flex flex-1 items-center justify-center gap-10 text-[13px] font-medium text-base-400">
-        <a href="#candidates" className="text-white relative after:absolute after:-bottom-5 after:left-1/2 after:-translate-x-1/2 after:w-1/2 after:h-[2px] after:bg-accent-500 after:rounded-full">Candidates</a>
-        <a href="#how-it-works" className="hover:text-white transition-colors">How it works</a>
-        <a href="#" className="hover:text-white transition-colors">Reports</a>
-        <a href="#" className="hover:text-white transition-colors">About</a>
+
+      {/* Center links */}
+      <div className="hidden lg:flex flex-1 items-center justify-center gap-8">
+        <a href="#candidates" className="nav-link active">Candidates</a>
+        <a href="#how-it-works" className="nav-link">How it works</a>
+        <a href="#" className="nav-link">Reports</a>
+        <a href="#" className="nav-link">About</a>
       </div>
-      
-      <div className="flex-1 flex justify-end items-center gap-4">
-        <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-100 border border-white/5">
-          <div className="w-1.5 h-1.5 rounded-full bg-mint-500" />
-          <span className="text-[11px] text-base-300 font-medium">20 Candidates</span>
+
+      {/* Right side */}
+      <div className="flex-1 flex justify-end items-center gap-3">
+        {/* Live indicator */}
+        <div
+          className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-semibold"
+          style={{
+            background: "rgba(16,185,129,0.1)",
+            border: "1px solid rgba(16,185,129,0.2)",
+            color: "rgba(52,211,153,0.9)",
+          }}
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ background: "#34d399", boxShadow: "0 0 6px #34d399", animation: "node-pulse 2s ease-in-out infinite" }}
+          />
+          Live · 20 Candidates
         </div>
-        <button className="px-5 py-2 bg-accent-600 hover:bg-accent-500 text-white rounded-lg text-xs font-bold transition-all shadow-lg shadow-accent-600/20">
-          Start an Interview →
+
+        {/* CTA */}
+        <button className="cta-btn">
+          Start Interview
+          <ArrowRight className="arrow w-3.5 h-3.5" />
         </button>
       </div>
     </nav>
