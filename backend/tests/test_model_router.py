@@ -110,7 +110,7 @@ def test_router_skips_unhealthy_model_without_blocking_others() -> None:
     tracker.record_rate_limited("llama-3.3-70b-versatile", retry_after_s=600)
     candidates, reason = router.ordered_candidates("strong")
     assert "llama-3.3-70b-versatile" not in candidates[:3]
-    assert candidates[0] == "qwen/qwen3.6-27b"  # next healthy in the pool
+    assert candidates[0] == "llama-3.1-8b-instant"
 
     # The fleet is NOT blocked: other pools still prefer their own models.
     candidates, _ = router.ordered_candidates("simple")
@@ -124,13 +124,13 @@ def test_router_respects_hard_failure_cooldown() -> None:
     tracker = ModelHealthTracker()
     router = ModelRouter(tracker)
 
-    tracker.record_failure("openai/gpt-oss-20b", "model_not_found", hard=True)
-    assert tracker.healthy("openai/gpt-oss-20b") is False
+    tracker.record_failure("llama-3.1-8b-instant", "model_not_found", hard=True)
+    assert tracker.healthy("llama-3.1-8b-instant") is False
     candidates, _ = router.ordered_candidates("medium")
-    assert candidates[0] == "qwen/qwen3.6-27b"
+    assert candidates[0] == "llama-3.3-70b-versatile"
 
-    tracker.record_success("openai/gpt-oss-20b", latency_ms=400, tokens=50)
-    assert tracker.healthy("openai/gpt-oss-20b") is True
+    tracker.record_success("llama-3.1-8b-instant", latency_ms=400, tokens=50)
+    assert tracker.healthy("llama-3.1-8b-instant") is True
 
 
 def test_preferred_model_keeps_continuity_within_task() -> None:
@@ -289,7 +289,7 @@ def test_load_balance_prefers_fresh_model() -> None:
     # Simple pool: 8B is best-fit, then allam.  Push 8B near its TPM limit.
     tracker.simulate_usage("llama-3.1-8b-instant", tpm_pct=0.95)
     candidates, _ = router.ordered_candidates("simple")
-    assert candidates[0] == "allam-2-7b"  # fresh peer takes over
+    assert candidates[0] == "llama-3.3-70b-versatile"  # fresh peer takes over
 
     # Fresh again -> 8B leads the pool.
     tracker.simulate_usage("llama-3.1-8b-instant")
@@ -299,13 +299,13 @@ def test_load_balance_prefers_fresh_model() -> None:
 
 def test_daily_headroom_protection_70b() -> None:
     """70B at 80%+ of its 100K TPD is not burned on strong work when a
-    suitable peer (qwen) still has headroom."""
+    suitable peer (compound) still has headroom."""
     tracker = ModelHealthTracker()
     router = ModelRouter(tracker)
 
     tracker.simulate_usage("llama-3.3-70b-versatile", tpd_pct=0.85)
     candidates, _ = router.ordered_candidates("strong")
-    assert candidates[0] == "qwen/qwen3.6-27b"
+    assert candidates[0] == "llama-3.1-8b-instant"
 
     # When everyone is fresh, 70B leads the strong pool again.
     tracker.simulate_usage("llama-3.3-70b-versatile")
@@ -319,16 +319,15 @@ def test_usage_spreads_across_suitable_peers() -> None:
     tracker = ModelHealthTracker()
     router = ModelRouter(tracker)
 
-    # Medium pool: 20B leads, qwen second.
-    tracker.simulate_usage("openai/gpt-oss-20b", tpm_pct=0.90)
+    # Medium pool: compound leads, allam second.
+    tracker.simulate_usage("llama-3.3-70b-versatile", tpm_pct=0.90)
     candidates, _ = router.ordered_candidates("medium")
-    assert candidates[0] == "qwen/qwen3.6-27b"
+    assert candidates[0] == "llama-3.1-8b-instant"
 
-    # Now qwen is also near its limit -> compound-mini takes over.
-    tracker.simulate_usage("openai/gpt-oss-20b", tpm_pct=0.90)
-    tracker.simulate_usage("qwen/qwen3.6-27b", tpm_pct=0.90)
+    # Now instant is also near its limit -> 70b takes over.
+    tracker.simulate_usage("llama-3.1-8b-instant", tpm_pct=0.90)
     candidates, _ = router.ordered_candidates("medium")
-    assert candidates[0] == "groq/compound-mini"
+    assert candidates[0] == "llama-3.3-70b-versatile"
 
 
 def test_model_status_diagnostics_has_no_secrets() -> None:
