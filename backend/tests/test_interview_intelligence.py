@@ -545,22 +545,32 @@ def test_llm_service_routes_fast_model_and_token_budget(monkeypatch) -> None:
 
     asyncio.run(run())
 
-    fast, turn_budget = settings.llm_fast_model, settings.llm_turn_max_tokens
-    primary, full_budget = settings.llm_model, settings.llm_max_tokens
-    assert recorder.calls[0] == (fast, turn_budget)  # simplify follow-up
-    assert recorder.calls[1] == (primary, turn_budget)  # question
-    assert recorder.calls[2] == (primary, turn_budget)  # evaluation
-    assert recorder.calls[3] == (primary, full_budget)  # feedback
+    from services.model_router import TASK_POOLS
+
+    turn_budget = settings.llm_turn_max_tokens
+    full_budget = settings.llm_max_tokens
+    # simplify follow-up -> simple pool -> fast model, turn budget.
+    assert recorder.calls[0] == (settings.llm_fast_model, turn_budget)
+    # question generation -> question pool -> its first healthy model.
+    assert recorder.calls[1][0] == TASK_POOLS["question"][0]
+    assert recorder.calls[1][1] == turn_budget
+    # evaluation (medium answer) -> medium pool -> balanced model.
+    assert recorder.calls[2][0] == TASK_POOLS["medium"][0]
+    assert recorder.calls[2][1] == turn_budget
+    # feedback -> feedback pool + FULL budget.
+    assert recorder.calls[3][0] == TASK_POOLS["feedback"][0]
+    assert recorder.calls[3][1] == full_budget
 
 
 def test_llm_service_skips_exhausted_quota_models(monkeypatch) -> None:
-    """A daily-token-quota 429 must not trigger short backoff retries: the
-    exhausted model is skipped after ONE attempt and the fast model answers
-    immediately — no 7s-per-model sleep walk."""
+    """A daily-token-quota 429 on ONE model must not trigger backoff or
+    block the fleet: the exhausted model is skipped after one attempt and
+    the next suitable model in the same task pool answers immediately."""
     import asyncio
     import json as _json
 
     from schemas.llm import FollowUpDraft
+    from services.model_router import TASK_POOLS
     from utils.errors import LLMError
 
     service = LLMService(settings)
@@ -589,6 +599,7 @@ def test_llm_service_skips_exhausted_quota_models(monkeypatch) -> None:
     monkeypatch.setattr(service, "_provider", provider)
 
     async def run():
+        # "deeper" follow-up -> strong pool: 70B first, qwen second.
         await service.structured_completion(
             system_prompt="s",
             user_prompt="Follow-up strategy: deeper\nquestion",
@@ -596,10 +607,11 @@ def test_llm_service_skips_exhausted_quota_models(monkeypatch) -> None:
         )
 
     asyncio.run(run())
-    # Primary tried exactly once (quota skip, no backoff), then the fast
-    # model answered — the rest of the fallback chain is never reached.
+    # Primary tried exactly once (quota skip, no backoff), then the next
+    # healthy model in the SAME task pool answered.  Independent quotas:
+    # one exhausted model never blocks the fleet.
     assert provider.models_tried[0] == settings.llm_model
-    assert provider.models_tried[1] == settings.llm_fast_model
+    assert provider.models_tried[1] == TASK_POOLS["strong"][1]
     assert len(provider.models_tried) == 2
 
 

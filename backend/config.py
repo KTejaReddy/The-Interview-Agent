@@ -107,6 +107,12 @@ class Settings:
     #: it defaults to a model already in the fallback chain, so no new API
     #: key or provider is ever required.
     llm_fast_model: str = os.getenv("LLM_FAST_MODEL", "llama-3.1-8b-instant")
+    #: Model guard mode for candidate-message security screening.
+    #: ``auto`` runs the light guard model only when a message shows soft
+    #: signals of an override/extraction attempt (the deterministic input
+    #: guard always runs); ``always`` runs the light guard on every message;
+    #: ``off`` keeps only the deterministic layer (no guard LLM calls).
+    llm_guard_mode: str = os.getenv("LLM_GUARD_MODE", "auto")
     #: Output budget for conversational turns (evaluation / question /
     #: follow-up).  The interviewer answers in 1-3 short sentences, so 800
     #: tokens of headroom only delays every turn; feedback keeps the full
@@ -121,12 +127,13 @@ class Settings:
         default_factory=lambda: _env_list(
             "LLM_FALLBACK_MODELS",
             [
-                "groq/compound",
-                "groq/compound-mini",
-                "qwen/qwen3-27b",
-                "openai/gpt-oss-120b",
-                "openai/gpt-oss-20b",
+                "llama-3.3-70b-versatile",
                 "llama-3.1-8b-instant",
+                "openai/gpt-oss-20b",
+                "qwen/qwen3.6-27b",
+                "groq/compound-mini",
+                "openai/gpt-oss-120b",
+                "groq/compound",
                 "allam-2-7b",
             ],
         )
@@ -141,6 +148,27 @@ class Settings:
     # Some providers (e.g. Gemini) do not support the response_format
     # parameter.  Set to empty string or "none" to disable it.
     llm_json_mode: bool = _env_bool("LLM_JSON_MODE", True)
+    # ------------------------------------------------------------------
+    # Quota-aware routing: the router switches models BEFORE a known limit
+    # is reached.  ``model_quota_headroom_percent`` is the master knob
+    # (e.g. 20 = keep 20% in reserve, switch at 80% usage); the per-limit
+    # thresholds override it when set.  All limits come from the Groq
+    # account table and live in services/model_router.py (MODEL_QUOTAS).
+    model_quota_headroom_percent: int = int(
+        os.getenv("MODEL_QUOTA_HEADROOM_PERCENT", "20")
+    )
+    model_tpm_headroom: float = float(
+        os.getenv("MODEL_TPM_HEADROOM", "0.75")
+    )
+    model_tpd_headroom: float = float(
+        os.getenv("MODEL_TPD_HEADROOM", "0.80")
+    )
+    model_rpm_headroom: float = float(
+        os.getenv("MODEL_RPM_HEADROOM", "0.75")
+    )
+    model_rpd_headroom: float = float(
+        os.getenv("MODEL_RPD_HEADROOM", "0.80")
+    )
 
     @property
     def llm_configured(self) -> bool:

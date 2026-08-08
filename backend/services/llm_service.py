@@ -26,6 +26,13 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from config import Settings
+from services.model_router import (
+    MODEL_REGISTRY,
+    ModelHealthTracker,
+    ModelRouter,
+    SECURITY_MODELS,
+    task_for_call,
+)
 from utils.context import current_session
 from utils.errors import LLMError, LLMNotConfiguredError, LLMUnavailableError
 from utils.logging import get_logger
@@ -45,7 +52,13 @@ _STOPWORDISH = {
 
 
 def _extract_json(text: str) -> str:
-    """Extract the JSON object from a completion, tolerating fences/extra text."""
+    """Extract the JSON object from a completion, tolerating fences/extra text.
+
+    Reasoning models (qwen) wrap their answer in ``<think>...</think>``
+    blocks; those are stripped first so the JSON search does not match a
+    JSON example inside the reasoning text.
+    """
+    text = _THINK_BLOCK_RE.sub("", text)
     match = _JSON_BLOCK_RE.search(text)
     if match:
         return match.group(1).strip()
@@ -55,6 +68,57 @@ def _extract_json(text: str) -> str:
     if start != -1 and end != -1 and end > start:
         return text[start : end + 1]
     return text.strip()
+
+
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+#: The security template embeds the raw candidate message after this marker.
+_MESSAGE_TO_CLASSIFY_RE = re.compile(
+    r"MESSAGE TO CLASSIFY\n(.*?)(?:\n\n|$)", re.DOTALL
+)
+
+
+def _message_to_classify(template: str) -> str:
+    """Extract the raw candidate message from the security template.
+
+    Prompt-guard models classify the TEXT ITSELF — they must never see the
+    template's own injection examples, or every message would look
+    suspicious.
+    """
+    match = _MESSAGE_TO_CLASSIFY_RE.search(template)
+    return (match.group(1).strip() if match else template).strip()
+
+
+def _parse_guard_draft(text: str) -> "SecurityDraft":
+    """Parse a guard-model reply into a SecurityDraft.
+
+    prompt-guard models answer with a plain probability like ``0.998``;
+    the safeguard model answers with a JSON SecurityDraft.  Accept both.
+    """
+    from schemas.llm import SecurityDraft
+
+    text = text.strip()
+    if text.startswith("{") or text.startswith("["):
+        payload = json.loads(_extract_json(text))
+        return SecurityDraft.model_validate(payload)
+    try:
+        probability = float(text)
+    except ValueError as exc:
+        raise ValueError(f"Guard reply is neither JSON nor a probability: {text!r}") from exc
+    return SecurityDraft(
+        flag="suspicious" if probability >= 0.5 else "safe",
+        reason=f"guard score {probability:.3f}",
+    )
+
+
+def _model_supports_json(model: str) -> bool:
+    """Whether a model accepts ``response_format: json_object``.
+
+    Registry entries may set ``json_mode: False`` for models that reject the
+    hook (e.g. qwen reasoning models).  Unknown models default to True.
+    """
+    meta = MODEL_REGISTRY.get(model, {})
+    return bool(meta.get("json_mode", True))
 
 
 class LLMProvider(ABC):
@@ -72,6 +136,22 @@ class LLMProvider(ABC):
         timeout: float,
     ) -> str:
         """Return the raw completion text for the given prompt pair."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def classify(
+        self,
+        *,
+        model: str,
+        message: str,
+        timeout: float,
+    ) -> str:
+        """Classify one untrusted message with a guard model.
+
+        Guard models (prompt-guard / safeguard) are text classifiers: they
+        take a SINGLE user message — no system message — and never accept
+        ``response_format``.  The raw label / probability is returned.
+        """
         raise NotImplementedError
 
 
@@ -112,7 +192,10 @@ class OpenAICompatibleProvider(LLMProvider):
                 {"role": "user", "content": user},
             ],
         }
-        if self._settings.llm_json_mode:
+        # ``response_format: json_object`` is a Groq validation hook: some
+        # models (qwen reasoning) reject it outright, so it is skipped for
+        # models flagged ``json_mode: False`` in the registry.
+        if self._settings.llm_json_mode and _model_supports_json(model):
             payload["response_format"] = {"type": "json_object"}
         try:
             response = await self._client.post(
@@ -133,6 +216,49 @@ class OpenAICompatibleProvider(LLMProvider):
                 f"{response.text[:500]}"
             )
 
+        try:
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, json.JSONDecodeError) as exc:
+            raise LLMError(f"Malformed LLM response: {exc}") from exc
+
+    async def classify(
+        self,
+        *,
+        model: str,
+        message: str,
+        timeout: float,
+    ) -> str:
+        """Guard-model classification: single user message, no JSON mode."""
+        if not self._settings.llm_api_key:
+            raise LLMNotConfiguredError(
+                "LLM_API_KEY is not set. Add it to backend/.env "
+                "(see .env.example) or enable LLM_MOCK_MODE for demos."
+            )
+        payload: dict[str, Any] = {
+            "model": model,
+            "temperature": 0.0,
+            "max_tokens": 24,
+            "messages": [{"role": "user", "content": message}],
+        }
+        try:
+            response = await self._client.post(
+                "/chat/completions",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {self._settings.llm_api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=timeout,
+            )
+        except httpx.HTTPError as exc:
+            raise LLMError(f"LLM request failed: {exc}") from exc
+
+        if response.status_code != 200:
+            raise LLMError(
+                f"LLM provider returned HTTP {response.status_code}: "
+                f"{response.text[:500]}"
+            )
         try:
             data = response.json()
             return data["choices"][0]["message"]["content"]
@@ -168,12 +294,51 @@ class MockProvider(LLMProvider):
             return json.dumps(self._mock_follow_up(user, topic))
         if "The interview is finished" in combined:
             return json.dumps(self._mock_feedback(user))
+        if "SECURITY CLASSIFICATION" in combined:
+            return json.dumps(self._mock_security(user))
         raise LLMError("Mock provider received an unknown prompt type.")
+
+    async def classify(
+        self,
+        *,
+        model: str,
+        message: str,
+        timeout: float,
+    ) -> str:
+        """Deterministic guard classification (mirrors the real guards)."""
+        return json.dumps(self._mock_security(message))
 
     @staticmethod
     def _field(user: str, pattern: str) -> str:
         match = re.search(pattern, user, re.MULTILINE)
         return match.group(1).strip() if match else ""
+
+    @staticmethod
+    def _mock_security(user: str) -> dict:
+        """Deterministic guard classification: mirrors the real guard's job
+        (flag genuine override/extraction/jailbreak attempts) using the same
+        surface phrases, so tests can exercise the escalation path."""
+        match = re.search(r"MESSAGE TO CLASSIFY\n(.*?)(?:\n\n|$)", user, re.DOTALL)
+        # Accept either the full security template or a bare candidate
+        # message (the real guards receive the raw text only).
+        message = (match.group(1).strip() if match else user).lower()
+        suspicious = any(
+            phrase in message
+            for phrase in (
+                "ignore your instructions",
+                "ignore all previous",
+                "system prompt",
+                "api key",
+                "jailbreak",
+                "developer mode",
+                "reveal your",
+                "print your",
+            )
+        )
+        return {
+            "flag": "suspicious" if suspicious else "safe",
+            "reason": "deterministic mock guard check",
+        }
 
     @staticmethod
     def _topic_from(user: str) -> str:
@@ -739,6 +904,24 @@ class LLMService:
         else:
             self._provider = OpenAICompatibleProvider(settings)
         self._in_flight = 0
+        #: Per-model health + the quota-aware router.  Every model below is
+        #: served by the SAME single Groq API key; quotas are tracked per
+        #: model so one exhausted model never blocks the rest of the fleet.
+        self._health = ModelHealthTracker(
+            usage_thresholds={
+                "tpm": settings.model_tpm_headroom,
+                "tpd": settings.model_tpd_headroom,
+                "rpm": settings.model_rpm_headroom,
+                "rpd": settings.model_rpd_headroom,
+            }
+        )
+        self._router = ModelRouter(
+            self._health,
+            fast_model_override=settings.llm_fast_model,
+        )
+        #: Last guard model that answered a ``classify()`` call (observability
+        #: for the security agent's escalation path).
+        self._last_guard_model: str = ""
 
     async def close(self) -> None:
         if isinstance(self._provider, OpenAICompatibleProvider):
@@ -751,6 +934,15 @@ class LLMService:
     @property
     def provider_name(self) -> str:
         return "mock" if self._settings.llm_mock_mode else self._settings.llm_provider
+
+    def model_status(self) -> dict:
+        """Per-model quota/health snapshot for developer diagnostics.
+        Never exposes keys or prompt content."""
+        return {
+            "provider": self.provider_name,
+            "headroom_thresholds": self._health.usage_thresholds,
+            "models": self._health.summary(),
+        }
 
     async def structured_completion(
         self,
@@ -794,31 +986,56 @@ class LLMService:
             if call_type == "feedback"
             else self._settings.llm_turn_max_tokens
         )
-        fast = self._use_fast_model(user_prompt, call_type)
 
         session = current_session.get()
-        primary_model = session.llm_model if session and session.llm_model else self._settings.llm_model
-
-        if fast:
-            candidates = [self._settings.llm_fast_model, primary_model]
-        else:
-            candidates = [primary_model, self._settings.llm_fast_model]
+        task = task_for_call(call_type, user_prompt)
+        candidates, routing_reason = self._router.ordered_candidates(
+            task, preferred=session.llm_model if session else None
+        )
+        # Breadth safety net: the configured fallback list may carry models
+        # outside the task pools.  Security-only models never generate.
+        candidates = list(candidates)
         for m in self._settings.llm_fallback_models:
-            if m not in candidates:
+            if m not in candidates and m not in SECURITY_MODELS:
                 candidates.append(m)
-
-        disallowed = {
-            "meta-llama/llama-prompt-guard-2-22m",
-            "meta-llama/llama-prompt-guard-2-86m",
-            "openai/gpt-oss-safeguard-20b"
-        }
-        candidates = [m for m in candidates if m not in disallowed]
 
         last_error: Exception | None = None
         
         for model in candidates:
             attempts = 0
             prompt_to_send = user_prompt 
+            # Reasoning models (qwen) spend output tokens on a <think> block
+            # before the JSON; give them headroom so the JSON is not
+            # truncated by the conversational budget.
+            model_max_tokens = (
+                max_tokens + 512
+                if not _model_supports_json(model)
+                else max_tokens
+            )
+            # Estimated cost of this call (chars/4 ≈ tokens in + budget out).
+            # Reserve BEFORE sending so a model near its TPM/TPD limit is
+            # skipped without making a doomed request.
+            est_input_tokens = (len(system) + len(prompt_to_send)) // 4
+            est_total_tokens = est_input_tokens + model_max_tokens
+            if not self._health.reserve_capacity(model, est_total_tokens):
+                if self._health.get(model).healthy:
+                    logger.info(
+                        "Quota-aware skip: %s is near its quota limit "
+                        "(~%d tokens requested) — trying next model.",
+                        model, est_total_tokens,
+                    )
+                    last_error = last_error or LLMError(
+                        "All suitable models are at their quota headroom "
+                        "for this call."
+                    )
+                else:
+                    logger.info(
+                        "Quota-aware skip: %s is unhealthy (reservation "
+                        "failed) — trying next model.",
+                        model,
+                    )
+                continue
+            reserved = True
             
             while attempts < 4:
                 attempts += 1
@@ -829,7 +1046,7 @@ class LLMService:
                         system=system,
                         user=prompt_to_send,
                         temperature=self._settings.llm_temperature,
-                        max_tokens=max_tokens,
+                        max_tokens=model_max_tokens,
                         timeout=self._settings.llm_timeout_seconds,
                     )
                     elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -839,24 +1056,32 @@ class LLMService:
                         else "-"
                     )
                     logger.info(
-                        "llm_call session=%s type=%s model=%s ms=%d "
-                        "in_tok~%d out_tok~%d",
+                        "llm_call session=%s type=%s task=%s model=%s ms=%d "
+                        "in_tok~%d out_tok~%d max_tok=%d est_total~%d reason=%s",
                         session_id,
                         call_type,
+                        task,
                         model,
                         elapsed_ms,
-                        (len(system) + len(prompt_to_send)) // 4,
+                        est_input_tokens,
                         len(raw) // 4,
+                        model_max_tokens,
+                        est_input_tokens + len(raw) // 4,
+                        routing_reason,
                     )
                 except LLMNotConfiguredError:
+                    self._health.release_reservation(model, est_total_tokens)
                     raise
                 except LLMError as exc:
                     last_error = exc
                     exc_str = str(exc).lower()
+                    # Update this model's independent health so the router
+                    # skips it on the next call (quotas are per model).
+                    self._record_model_failure(model, exc_str)
                     # A daily-token-quota 429 tells us to wait 20+ minutes —
                     # short backoff retries just burn time.  Skip straight to
-                    # the next model so the fastest working fallback (the
-                    # fast model) answers immediately.
+                    # the next suitable model so the fleet answers
+                    # immediately.
                     quota_exhausted = any(
                         kw in exc_str
                         for kw in ("tokens per day", "tpd", "try again in")
@@ -881,19 +1106,27 @@ class LLMService:
                     payload = json.loads(_extract_json(raw))
                     result = schema.model_validate(payload)
                     
-                    # Session model selection tracks fallbacks, not the
-                    # deliberate fast-path choice: a short follow-up routed
-                    # to the fast model must not downgrade the session's
-                    # model for heavier calls.
-                    if session and session.llm_model != model and not fast:
-                        logger.info("Session fallback: switching to %s (was %s)", model, session.llm_model)
-                        session.llm_model = model
-                        
+                    # Per-model health + session model memory: which model
+                    # worked, how fast, and why it was chosen.  Reconcile the
+                    # reservation with actual usage (est in + actual out).
+                    actual_tokens = est_input_tokens + len(raw) // 4
+                    self._health.reconcile_capacity(
+                        model, est_total_tokens, actual_tokens
+                    )
+                    self._health.record_success(model, elapsed_ms, actual_tokens)
+                    if session:
+                        self._record_session_choice(
+                            session, model, call_type, elapsed_ms, routing_reason
+                        )
                     return result
                 except (json.JSONDecodeError, ValidationError) as exc:
                     last_error = exc
                     logger.warning("JSON validation failed on %s (attempt %d): %s", model, attempts, exc)
-                    if attempts < 4:
+                    # A model that cannot emit valid JSON for this schema is
+                    # a poor fit: one repair attempt, then mark it hard
+                    # unhealthy and move to the next suitable model instead
+                    # of burning four calls per turn on it.
+                    if attempts < 2:
                         prompt_to_send = (
                             f"Your previous reply was not valid JSON matching the "
                             f"required schema. Fix it. Required fields:\n"
@@ -901,8 +1134,15 @@ class LLMService:
                             f"{user_prompt}"
                         )
                         continue
-                    else:
-                        break
+                    self._health.record_failure(
+                        model, f"json_validation: {exc}", hard=True
+                    )
+                    self._health.release_reservation(model, est_total_tokens)
+                    reserved = False
+                    break
+
+            if reserved:
+                self._health.release_reservation(model, est_total_tokens)
 
             if model != candidates[-1]:
                 logger.info("Fallback triggered: moving from %s to next model.", model)
@@ -924,19 +1164,158 @@ class LLMService:
             return "feedback"
         return "unknown"
 
-    @staticmethod
-    def _use_fast_model(user_prompt: str, call_type: str) -> bool:
-        """True when this turn is a short, semi-formulaic follow-up on a
-        non-substantive verdict (simplify / verify / recovery) — exactly the
-        calls where a fast model is sufficient and the primary model's depth
-        adds latency without adding quality."""
-        if call_type != "follow_up":
-            return False
-        return any(
-            marker in user_prompt
-            for marker in (
-                "- Follow-up strategy: simplify",
-                "- Follow-up strategy: verify",
-                "- Follow-up strategy: recovery",
+    # ------------------------------------------------------------------ health
+
+    def _record_model_failure(self, model: str, exc_str: str) -> None:
+        """Classify a provider error and update the model's independent
+        health: rate limits mark only that model unavailable, hard errors
+        (404 / JSON) put it on cooldown, transient errors accumulate."""
+        if any(
+            kw in exc_str
+            for kw in ("429", "rate limit", "tokens per day", "tpd", "try again in")
+        ):
+            self._health.record_rate_limited(
+                model, retry_after_s=self._retry_after_seconds(exc_str)
             )
+        elif any(
+            kw in exc_str
+            for kw in ("404", "model_not_found", "400", "json", "validate")
+        ):
+            self._health.record_failure(model, exc_str, hard=True)
+        else:
+            self._health.record_failure(model, exc_str, hard=False)
+
+    @staticmethod
+    def _retry_after_seconds(exc_str: str) -> float | None:
+        """Parse Groq's "Please try again in 1h5m30s" style hint."""
+        match = re.search(
+            r"try again in (?:([\d.]+)h)?(?:([\d.]+)m)?([\d.]+)s", exc_str
+        )
+        if not match:
+            return None
+        hours = float(match.group(1) or 0)
+        minutes = float(match.group(2) or 0)
+        seconds = float(match.group(3) or 0)
+        return hours * 3600 + minutes * 60 + seconds
+
+    @staticmethod
+    def _record_session_choice(
+        session, model: str, call_type: str, elapsed_ms: float, reason: str
+    ) -> None:
+        """Session model memory: current model, preferred model, latency and
+        a bounded history of which model handled which call and why."""
+        if session.llm_model != model:
+            logger.info(
+                "Session model switch: %s -> %s (%s, %s)",
+                session.llm_model,
+                model,
+                call_type,
+                reason,
+            )
+            session.llm_model = model
+        session.preferred_model = model
+        session.last_model_latency = round(elapsed_ms, 1)
+        session.routing_reason = reason
+        history = list(getattr(session, "model_history", None) or [])
+        history.append(
+            {
+                "model": model,
+                "type": call_type,
+                "ms": round(elapsed_ms, 1),
+                "reason": reason,
+            }
+        )
+        session.model_history = history[-40:]
+
+    # ----------------------------------------------------------------- guards
+
+    async def classify(self, *, task: str, user_prompt: str):
+        """Guard-model classification of one untrusted message.
+
+        Only the security pools are consulted (``guard_light`` /
+        ``guard_strong`` / ``safeguard``) with a tiny output budget and zero
+        temperature.  Guard models never generate interviewer language; they
+        only answer ``safe`` / ``suspicious``.
+
+        Two call styles, matching how each guard actually works:
+
+        * prompt-guard models (22M / 86M) are text classifiers: a SINGLE
+          user message with the raw candidate text, no ``response_format``;
+          they answer with a probability in [0, 1] (>= 0.5 -> suspicious).
+        * the safeguard model is a normal chat model and gets the full
+          security template with JSON mode, parsed as a ``SecurityDraft``.
+
+        The raw candidate message is extracted from the security template so
+        the classifier never sees the template's own injection examples.
+        """
+        from schemas.llm import SecurityDraft
+
+        if not self.configured:
+            raise LLMNotConfiguredError(
+                "No LLM provider is configured. Set LLM_API_KEY in "
+                "backend/.env or enable LLM_MOCK_MODE=true for demos."
+            )
+        candidates, _reason = self._router.ordered_candidates(task, preferred=None)
+        if not candidates:
+            raise LLMUnavailableError(
+                "No security classifier is currently available."
+            )
+        raw_message = _message_to_classify(user_prompt)
+        system = "Reply with a single JSON object only, no markdown, no commentary."
+        last_error: Exception | None = None
+        for model in candidates:
+            # Guard calls are tiny (~128 tokens) but still count against the
+            # model's windows — reserve so a guard at its limit is skipped.
+            est_tokens = (len(system) + len(user_prompt)) // 4 + 128
+            if not self._health.reserve_capacity(model, est_tokens):
+                logger.info(
+                    "Quota-aware skip: guard %s has insufficient headroom.",
+                    model,
+                )
+                continue
+            try:
+                is_probability_guard = MODEL_REGISTRY.get(model, {}).get(
+                    "role"
+                ) in ("guard_light", "guard_strong")
+                if is_probability_guard:
+                    text = await self._provider.classify(
+                        model=model,
+                        message=raw_message,
+                        timeout=self._settings.llm_timeout_seconds,
+                    )
+                    draft = _parse_guard_draft(text)
+                else:
+                    raw = await self._provider.complete(
+                        model=model,
+                        system=system,
+                        user=user_prompt,
+                        temperature=0.0,
+                        # The safeguard model needs ~128 output tokens for
+                        # its JSON verdict; 60 truncates it into an empty
+                        # generation and a JSON-validation error.
+                        max_tokens=128,
+                        timeout=self._settings.llm_timeout_seconds,
+                    )
+                    payload = json.loads(_extract_json(raw))
+                    draft = SecurityDraft.model_validate(payload)
+                self._health.reconcile_capacity(
+                    model, est_tokens, est_tokens
+                )
+                # Record which guard answered so the security agent can
+                # report the escalation path in its logs.
+                self._last_guard_model = model
+                logger.info(
+                    "guard_call model=%s task=%s flag=%s",
+                    model,
+                    task,
+                    draft.flag,
+                )
+                return draft
+            except (LLMError, json.JSONDecodeError, ValidationError, ValueError) as exc:
+                last_error = exc
+                self._health.release_reservation(model, est_tokens)
+                self._record_model_failure(model, str(exc).lower())
+                logger.warning("Guard model %s failed: %s", model, exc)
+        raise LLMUnavailableError(
+            f"Security classifiers unavailable: {last_error}"
         )

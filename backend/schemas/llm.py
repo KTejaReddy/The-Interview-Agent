@@ -60,6 +60,17 @@ class EvaluationDraft(BaseModel):
     notes: str = Field(default="", description="Short private rationale")
 
 
+class SecurityDraft(BaseModel):
+    """Classification of an untrusted candidate message by a guard model.
+
+    Guard models (prompt-guard / safeguard) never generate interviewer
+    language — they only answer ``safe`` / ``suspicious`` for a message.
+    """
+
+    flag: Literal["safe", "suspicious"]
+    reason: str = Field(default="", description="Short rationale, 1 sentence")
+
+
 class FollowUpDraft(BaseModel):
     """A follow-up question adapted to the candidate's last answer."""
 

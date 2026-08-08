@@ -43,7 +43,14 @@ class InterviewSession:
     current_difficulty: Difficulty = Difficulty.MEDIUM
     feedback: FeedbackResult | None = None
     transcript: list[dict] = field(default_factory=list)  # [{role, text}]
-    llm_model: str | None = None         # Currently selected LLM model for this session
+    # --- multi-model session memory (one consistent interviewer across
+    # switches — the persona lives in the shared prompt architecture, so a
+    # model change is invisible to the candidate) ---
+    llm_model: str | None = None         # Currently selected model for this session
+    preferred_model: str | None = None   # Last model that worked well
+    model_history: list[dict] = field(default_factory=list)  # [{model, type, ms, reason}]
+    routing_reason: str = ""             # Why the current model was chosen
+    last_model_latency: float = 0.0      # ms of the last successful call
     created_at: datetime = field(default_factory=_now)
     updated_at: datetime = field(default_factory=_now)
 

@@ -250,3 +250,16 @@ async def health(request: Request) -> HealthResponse:
         mockMode=settings.llm_mock_mode,
         datasetsError=datasets_error,
     )
+
+
+@router.get("/models")
+async def model_status(request: Request) -> dict:
+    """Developer diagnostics: per-model quota state, usage and health.
+
+    Internal endpoint — the candidate-facing UI never calls it, and it
+    exposes no keys or prompt content.  Useful for watching the router
+    spread load across the fleet and switch before limits are reached.
+    """
+    services = _services(request)
+    llm = services["llm"]
+    return llm.model_status()

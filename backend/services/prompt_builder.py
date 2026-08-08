@@ -44,6 +44,7 @@ _TEMPLATES = (
     "evaluate_answer",
     "generate_follow_up",
     "generate_feedback",
+    "security_check",
     "messages",
 )
 
@@ -231,6 +232,10 @@ class PromptBuilder:
             )
             or "none yet",
         )
+
+    def security_check_prompt(self, message: str) -> str:
+        """Prompt for a guard model classifying one untrusted message."""
+        return self._templates["security_check"].format(message=message or "—")
 
     def feedback_prompt(self, context: InterviewContext) -> str:
         # Evidence-based assessment state: per-topic verdicts and scores

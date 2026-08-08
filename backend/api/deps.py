@@ -15,6 +15,7 @@ from agents.followup_generator import FollowUpGenerator
 from agents.interview_manager import InterviewManager
 from agents.question_planner import QuestionPlanner
 from agents.response_evaluator import ResponseEvaluator
+from agents.security_guard import SecurityGuard
 from config import Settings
 from memory.context_manager import ContextManager
 from retrieval.candidate_loader import CandidateLoader
@@ -64,6 +65,7 @@ class Container:
         self.context = ContextManager(
             transcript_window=settings.transcript_window
         )
+        self.security_guard = SecurityGuard(self.llm, self.prompts)
         self.manager = InterviewManager(
             settings,
             self.sessions,
@@ -77,6 +79,7 @@ class Container:
             self.followups,
             self.feedback_generator,
             self.context,
+            self.security_guard,
         )
 
     def load_datasets(self) -> None:

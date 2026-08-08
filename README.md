@@ -236,7 +236,7 @@ The Vite dev server proxies `/api` to `http://localhost:8000`.
 
 ```bash
 cd backend
-pytest                       # 116 tests, fully offline (mock LLM + fixtures)
+pytest                       # 143 tests, fully offline (mock LLM + fixtures)
 python scripts/live_tests.py # live scenarios A–H against the real datasets
 ```
 
@@ -261,6 +261,12 @@ conversational intelligence:
   verbatim (default 6) plus a structured digest (aggregate summary + notable
   earlier statements); earlier claims, mistakes and contradictions are never
   lost. Only final feedback reads the whole transcript (it runs once).
+* **Slim prompts** — the prompt templates were audited and compressed (the
+  largest fixed token cost per call): `interviewer_system` −24%,
+  `generate_question` −32%, `evaluate_answer` −22%, `generate_follow_up`
+  −23%.  A typical turn now sends ~1,500–2,400 input tokens (question
+  ~2,150, evaluate ~1,750, follow-up ~1,500 total) — inside the
+  `<3K normal / <2K simple / <4K complex` budgets.
 * **Capped output** — conversational calls use `LLM_TURN_MAX_TOKENS`
   (default 300) instead of the 800-token general budget; feedback keeps the
   full budget.
@@ -268,12 +274,63 @@ conversational intelligence:
   min") skips straight to the next model instead of burning 1+2+4 s backoff
   on an exhausted model; transient errors still retry.
 * **Instrumentation** — every LLM call logs
-  `llm_call session=… type=… model=… ms=… in_tok~… out_tok~…` and every
-  turn logs `turn session=… state=… total_ms=…`.
+  `llm_call session=… type=… model=… ms=… in_tok~… out_tok~… max_tok=…
+  est_total~…` (input estimate, actual output, output budget, estimated
+  total) and every turn logs `turn session=… state=… total_ms=…`; the
+  `GET /api/models` endpoint shows per-model quota state, usage fractions
+  and selection counts.
 
 Measured on the live server (Groq, `127.0.0.1`): start ≈ 0.6 s, an
 "I don't know" follow-up ≈ 0.3 s, a new-topic question ≈ 1.4 s, a
 substantive answer + deep follow-up ≈ 2.5 s — down from 30-35 s per turn.
+
+### 6. Intelligent multi-model routing (one Groq API key)
+
+All 11 supplied Groq models are supported through the **single**
+`GROQ_API_KEY`, with an intelligent router (`services/model_router.py`)
+that picks the right model for the task instead of serialising the fleet:
+
+* **Specialised registry + task pools** — every model has a role
+  (`fast_conversation`, `balanced_reasoning`, `technical_reasoning`,
+  `deep_reasoning`, `advanced_reasoning`, `complex_agentic`, …) and each
+  task (simple / medium / strong / advanced / question / feedback) has an
+  ordered pool.  A normal turn uses **one** generation model.
+* **Quota-aware load balancing** — `MODEL_QUOTAS` mirrors the exact Groq
+  account table (RPM / RPD / TPM / TPD per model).  The router tracks each
+  model's rolling minute/day usage and **switches before a limit is hit**
+  (not after a 429): a weighted score — task fitness + quota headroom +
+  latency + health + load balance — re-ranks the pool every call, so
+  traffic spreads across suitable peers and a model at 80%+ of its TPM/TPD
+  is demoted while a fresh peer takes over.  `MODEL_QUOTA_HEADROOM_PERCENT`
+  (default 20) plus per-limit thresholds tune when switching happens.
+* **Token reservation** — before each call the router reserves the
+  estimated token cost against the model's TPM/TPD windows and picks
+  another model if the reservation fails, so concurrent interview sessions
+  cannot oversubscribe one model.  Actual usage is reconciled after the
+  response; failed calls release their reservation.
+* **Independent per-model quotas** — each model tracks its own health
+  (rate-limited-until, hard-failure cooldown, latency, success rate).  One
+  exhausted model is skipped; the fleet keeps answering.  A daily-quota 429
+  ("try again in 20+ min") skips straight to the next model with no backoff.
+* **Session model continuity** — the chosen model, routing reason and
+  latency are stored per session; the interviewer's persona lives in the
+  shared prompts, so model switches are invisible to the candidate.
+* **Complexity estimation** — answer length + technical keywords select the
+  judging tier: short/non-substantive replies route cheap, deep
+  architecture answers escalate to 70B / 120B / compound.
+* **Reasoning-model support** — `qwen/qwen3.6-27b` rejects
+  `response_format: json_object`, so it is flagged `json_mode: False`:
+  the provider skips the hook, gives the think block extra output
+  headroom, and `_extract_json` strips `<think>…</think>` before parsing.
+* **Security models on a dedicated path** — `classify()` sends guard
+  models (prompt-guard 22M / 86M) a **single user message** with no JSON
+  mode and parses their probability score; the safeguard chat model gets
+  the full JSON template.  Guard models never generate interviewer text.
+
+Probe live reachability with `scripts/verify_models.py` (one tiny call per
+model; only `GROQ_API_KEY` is needed).  Watch the router's live per-model
+quota state, usage and selection counts at `GET /api/models` (developer
+diagnostics; exposes no keys or prompt content).
 
 ---
 

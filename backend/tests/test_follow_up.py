@@ -92,6 +92,15 @@ class _ScriptedProvider(LLMProvider):
 
         raise ValueError(f"Unknown prompt type: {combined[:80]}")
 
+    async def classify(
+        self,
+        *,
+        model: str,
+        message: str,
+        timeout: float,
+    ) -> str:
+        return "0.01"  # benign
+
 
 class FakeLLM:
     """Minimal LLM service stand-in."""

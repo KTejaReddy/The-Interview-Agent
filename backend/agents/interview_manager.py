@@ -31,6 +31,7 @@ from agents.feedback_generator import FeedbackGenerator
 from agents.followup_generator import FollowUpGenerator
 from agents.question_planner import QuestionPlanner
 from agents.response_evaluator import ResponseEvaluator
+from agents.security_guard import SecurityGuard
 from config import Settings
 from memory.context_manager import ContextManager
 from memory.conversation_memory import ConversationMemory
@@ -95,6 +96,7 @@ class InterviewManager:
         followups: FollowUpGenerator,
         feedback_generator: FeedbackGenerator,
         context_manager: ContextManager,
+        security_guard: SecurityGuard | None = None,
     ) -> None:
         self._settings = settings
         self._sessions = sessions
@@ -108,6 +110,7 @@ class InterviewManager:
         self._followups = followups
         self._feedback_generator = feedback_generator
         self._context = context_manager
+        self._security = security_guard
 
     # ------------------------------------------------------------------ public
 
@@ -160,6 +163,30 @@ class InterviewManager:
         elif state == InterviewState.INTRODUCTION:
             result = await self._after_intro(session)
         elif state in (InterviewState.QUESTIONING, InterviewState.FOLLOW_UP):
+            # Security: untrusted candidate answers are screened before the
+            # interviewer engine runs.  A confirmed injection attempt gets a
+            # short in-persona deflection and does NOT advance the interview
+            # (the candidate must still answer the current question).
+            if self._security is not None:
+                screen = await self._security.screen(message)
+                if screen.flagged:
+                    text = self._security.deflection()
+                    self._append(session, "interviewer", text)
+                    await self._sessions.update(session)
+                    logger.warning(
+                        "Injection attempt blocked for session %s (%s)",
+                        session.session_id,
+                        screen.reason,
+                    )
+                    question = session.plan.question_at(
+                        session.current_question_index
+                    )
+                    return self._result(
+                        session,
+                        state,
+                        text,
+                        question=question,
+                    )
             result = await self._handle_answer(session, message)
         elif state == InterviewState.FINAL_QUESTION:
             result = await self._finalize(session)
