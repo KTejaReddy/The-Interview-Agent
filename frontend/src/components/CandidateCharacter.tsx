@@ -27,11 +27,11 @@ export function RealisticAvatar({ name, id }: { name: string; id?: string }) {
   const avatarUrl = id && avatarMap[id] ? avatarMap[id] : fallbackUrl;
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center overflow-hidden rounded-[14px]">
+    <div className="relative w-full h-full flex items-center justify-center">
       <img 
         src={avatarUrl} 
         alt={name} 
-        className="w-full h-full object-cover transition-transform duration-700 hover:scale-110"
+        className="w-full h-full object-cover object-bottom transition-transform duration-700 hover:scale-105"
       />
     </div>
   );

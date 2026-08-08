@@ -1,10 +1,11 @@
 import { useState, useMemo } from "react";
 import { useInterview } from "../context/InterviewContext";
-import type { Page } from "../types";
+import type { CandidateSummary, Page } from "../types";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { Navigation } from "../components/Navigation";
-import { RealisticAvatar } from "../components/CandidateCharacter";
-import { Search, ArrowRight, CheckCircle2, Users, CalendarDays, MessageSquare, Zap, SlidersHorizontal, LayoutGrid, List } from "lucide-react";
+import { CandidateCard3D } from "../components/CandidateCard3D";
+import { CandidateDrawer } from "../components/CandidateDrawer";
+import { Search, Users, CalendarDays, MessageSquare, Zap, SlidersHorizontal, LayoutGrid } from "lucide-react";
 
 interface LandingProps {
   onNavigate: (page: Page) => void;
@@ -12,225 +13,233 @@ interface LandingProps {
 
 export function Landing({ onNavigate }: LandingProps) {
   const { candidates, candidatesLoading, health, error, dismissError, startInterview } = useInterview();
-  
+
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "strong" | "developing">("all");
+  const [sortBy, setSortBy] = useState<"readiness" | "name" | "missions">("readiness");
+  const [dossierCandidate, setDossierCandidate] = useState<CandidateSummary | null>(null);
+
+  const curriculumDaysTotal = health?.curriculumDays || 31;
 
   const filteredCandidates = useMemo(() => {
-    return candidates.filter(c => {
+    let list = candidates.filter(c => {
       if (search && !c.name.toLowerCase().includes(search.toLowerCase()) && !c.role.toLowerCase().includes(search.toLowerCase())) {
         return false;
       }
-      const readiness = c.missionsCompleted ? (c.missionsCompleted / (health?.curriculumDays || 31)) * 100 : 0;
+      const readiness = c.missionsCompleted ? (c.missionsCompleted / curriculumDaysTotal) * 100 : 0;
       if (filter === "strong" && readiness < 70) return false;
       if (filter === "developing" && readiness >= 70) return false;
       return true;
     });
-  }, [candidates, search, filter, health]);
+
+    // Sort
+    if (sortBy === "readiness") {
+      list = [...list].sort((a, b) => (b.missionsCompleted ?? 0) - (a.missionsCompleted ?? 0));
+    } else if (sortBy === "name") {
+      list = [...list].sort((a, b) => a.name.localeCompare(b.name));
+    } else if (sortBy === "missions") {
+      list = [...list].sort((a, b) => (b.missionsCompleted ?? 0) - (a.missionsCompleted ?? 0));
+    }
+
+    return list;
+  }, [candidates, search, filter, sortBy, curriculumDaysTotal]);
 
   const handleStart = async (candidateId: string) => {
+    setDossierCandidate(null);
     await startInterview(candidateId, "Hi! I'm ready to start.");
     onNavigate("interview");
   };
 
-  const curriculumDaysTotal = health?.curriculumDays || 31;
+  const handleDossier = (candidateId: string) => {
+    const c = candidates.find(x => x.id === candidateId);
+    if (c) setDossierCandidate(c);
+  };
 
   return (
-    <div className="relative min-h-screen bg-background selection:bg-accent-500/30 overflow-x-hidden text-gray-200">
-      
-      <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGg0MHY0MEgwem0yMCAyMGMxLjEgMCAyLS45IDItMmMwLTEuMS0uOS0yLTItMnMtMiAuOS0yIDJjMCAxLjEuOSAyIDIgMnoiIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMiIgZmlsbC1ydWxlPSJldmVub2RkIi8+PC9zdmc+')] opacity-[0.15]" />
-      <div className="bg-orb-1 top-[-10%] left-[-10%] w-[1000px] h-[1000px] mix-blend-screen" />
-      <div className="bg-orb-2 bottom-[10%] right-[-10%] w-[800px] h-[800px] mix-blend-screen" />
+    <div className="relative min-h-screen bg-[#080b12] selection:bg-indigo-500/30 overflow-x-hidden text-gray-200">
+
+      {/* Rich atmospheric background */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        {/* Subtle grain */}
+        <div className="absolute inset-0 opacity-[0.025]" style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+          backgroundSize: "180px 180px",
+        }} />
+        {/* Atmospheric orbs */}
+        <div className="absolute top-[-20%] left-[-5%] w-[700px] h-[700px] rounded-full opacity-[0.07] blur-[120px]" style={{ background: "radial-gradient(circle, #6366f1, transparent 70%)" }} />
+        <div className="absolute top-[20%] right-[-10%] w-[600px] h-[600px] rounded-full opacity-[0.06] blur-[100px]" style={{ background: "radial-gradient(circle, #06b6d4, transparent 70%)" }} />
+        <div className="absolute bottom-[5%] left-[30%] w-[500px] h-[500px] rounded-full opacity-[0.05] blur-[100px]" style={{ background: "radial-gradient(circle, #a78bfa, transparent 70%)" }} />
+      </div>
 
       <Navigation />
 
-      <main className="relative z-10 mx-auto max-w-[1440px] px-6 py-12">
+      <main className="relative z-10 mx-auto max-w-[1500px] px-5 py-6">
         {error && (
           <div className="mb-6">
             <ErrorBanner message={error} onDismiss={dismissError} />
           </div>
         )}
-        
-        {/* Split Hero Section */}
-        <section className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-12 mb-16">
-          <div className="max-w-2xl">
-            <h1 className="text-4xl md:text-[54px] font-bold text-white leading-[1.1] tracking-tight mb-4">
-              Find the right candidate.<br />
-              <span className="font-serif italic text-base-300">The interview already knows their journey.</span>
-            </h1>
-            <p className="text-sm md:text-[15px] text-base-400 leading-relaxed max-w-xl">
-              Pick a journey — the interview adapts to what they actually built across the ABTalks AI Engineering Cohort.
-            </p>
+
+        {/* ── HERO ─────────────────────────────────────────────────── */}
+        <section className="relative mb-10 rounded-[28px] overflow-hidden border border-white/[0.04]"
+          style={{ background: "linear-gradient(135deg, #0d1117 0%, #111827 100%)" }}>
+          {/* Journey arc SVG */}
+          <div className="absolute inset-0 pointer-events-none opacity-[0.12]">
+            <svg className="absolute right-0 top-0 w-full h-full" viewBox="0 0 800 300" fill="none" preserveAspectRatio="xMidYMid slice">
+              <path d="M800,280 C700,200 600,270 500,180 C400,90 300,160 200,80 C100,0 50,40 0,20"
+                stroke="url(#heroGrad1)" strokeWidth="1.5" strokeDasharray="5 5" fill="none" />
+              <path d="M800,240 C680,170 580,230 480,150 C380,70 280,130 180,60 C80,-10 30,30 0,10"
+                stroke="url(#heroGrad2)" strokeWidth="1" strokeDasharray="3 7" fill="none" />
+              <circle cx="500" cy="180" r="4" fill="#6366f1" opacity="0.8" />
+              <circle cx="300" cy="160" r="5" fill="#06b6d4" opacity="0.8" />
+              <circle cx="200" cy="80" r="3.5" fill="#a78bfa" opacity="0.8" />
+              <circle cx="700" cy="200" r="3" fill="#34d399" opacity="0.7" />
+              <defs>
+                <linearGradient id="heroGrad1" x1="800" y1="280" x2="0" y2="20" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#6366f1" /><stop offset="0.5" stopColor="#06b6d4" /><stop offset="1" stopColor="#34d399" />
+                </linearGradient>
+                <linearGradient id="heroGrad2" x1="800" y1="240" x2="0" y2="10" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#a78bfa" /><stop offset="1" stopColor="#6366f1" />
+                </linearGradient>
+              </defs>
+            </svg>
           </div>
-          
-          <div className="flex flex-wrap lg:flex-nowrap items-center gap-4">
-            <MetricCard icon={<Users className="w-5 h-5 text-accent-400" />} value="20" label="Candidate Profiles" />
-            <MetricCard icon={<CalendarDays className="w-5 h-5 text-accent-purple" />} value="31" label="Curriculum Days" />
-            <MetricCard icon={<MessageSquare className="w-5 h-5 text-accent-cyan" />} value="8–14" label="Questions / Interview" />
-            <MetricCard icon={<Zap className="w-5 h-5 text-amber-400" />} value="<1s" label="First Response" />
+
+          <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-10 px-10 py-12">
+            <div className="max-w-xl">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-indigo-500/20 bg-indigo-500/10 text-indigo-400 text-[11px] font-bold uppercase tracking-widest mb-5">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                AI Engineering Cohort · 31 Days
+              </div>
+              <h1 className="text-4xl md:text-[48px] font-bold text-white leading-[1.08] tracking-tight mb-4">
+                Find the right candidate.<br />
+                <span className="text-slate-400 font-normal text-[0.85em]">The interview already knows their journey.</span>
+              </h1>
+              <p className="text-[14px] text-slate-500 leading-relaxed">
+                Select a candidate — the AI interviewer adapts every question to what they actually built, skipped, struggled with, and accomplished across the cohort.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap lg:flex-nowrap items-center gap-3 shrink-0">
+              <MetricCard icon={<Users className="w-4 h-4" />} value={String(candidates.length || 20)} label="Candidates" color="#6366f1" />
+              <MetricCard icon={<CalendarDays className="w-4 h-4" />} value={String(curriculumDaysTotal)} label="Curriculum Days" color="#06b6d4" />
+              <MetricCard icon={<MessageSquare className="w-4 h-4" />} value="8–14" label="Questions" color="#a78bfa" />
+              <MetricCard icon={<Zap className="w-4 h-4" />} value="<1s" label="First Reply" color="#f59e0b" />
+            </div>
           </div>
         </section>
 
-        {/* Toolbar */}
-        <section className="flex flex-col md:flex-row items-center justify-between gap-4 mb-8 bg-surface-50/50 backdrop-blur-md border border-white/5 rounded-2xl p-2 pl-4">
-          <div className="flex items-center gap-1 w-full md:w-auto overflow-x-auto no-scrollbar">
-            <button onClick={() => setFilter("all")} className={`px-4 py-2 rounded-xl text-[13px] font-medium whitespace-nowrap transition-colors ${filter === "all" ? "bg-accent-600 text-white" : "text-base-400 hover:text-white hover:bg-surface-100"}`}>All</button>
-            <button onClick={() => setFilter("strong")} className={`px-4 py-2 rounded-xl text-[13px] font-medium whitespace-nowrap transition-colors ${filter === "strong" ? "bg-accent-600 text-white" : "text-base-400 hover:text-white hover:bg-surface-100"}`}>Interview Ready</button>
-            <button className="px-4 py-2 rounded-xl text-[13px] font-medium whitespace-nowrap text-base-400 hover:text-white hover:bg-surface-100">Most Complete</button>
-            <button onClick={() => setFilter("developing")} className={`px-4 py-2 rounded-xl text-[13px] font-medium whitespace-nowrap transition-colors ${filter === "developing" ? "bg-accent-600 text-white" : "text-base-400 hover:text-white hover:bg-surface-100"}`}>Needs Practice</button>
+        {/* ── TOOLBAR ──────────────────────────────────────────────── */}
+        <div className="flex flex-col md:flex-row items-center justify-between gap-3 mb-8 px-1">
+          {/* Filters */}
+          <div className="flex items-center gap-1 p-1 rounded-xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm">
+            {[
+              { id: "all" as const, label: "All Candidates" },
+              { id: "strong" as const, label: "Interview Ready" },
+              { id: "developing" as const, label: "Needs Practice" },
+            ].map(f => (
+              <button
+                key={f.id}
+                onClick={() => setFilter(f.id)}
+                className={`px-4 py-2 rounded-lg text-[12px] font-semibold whitespace-nowrap transition-all duration-200 ${filter === f.id
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "text-slate-400 hover:text-white hover:bg-white/[0.06]"
+                  }`}
+              >
+                {f.label}
+              </button>
+            ))}
           </div>
-          
-          <div className="flex items-center gap-4 ml-auto w-full md:w-auto">
-            <div className="flex items-center gap-2 text-[13px] text-base-400 font-medium px-4 py-2 border-r border-white/10">
-              <SlidersHorizontal className="w-4 h-4" />
-              <span>Sort: Readiness</span>
+
+          {/* Right side controls */}
+          <div className="flex items-center gap-3">
+            {/* Sort */}
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/[0.06] bg-white/[0.03] text-[12px] text-slate-400">
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value as typeof sortBy)}
+                className="bg-transparent text-slate-300 font-medium outline-none cursor-pointer"
+              >
+                <option value="readiness">Sort: Readiness</option>
+                <option value="name">Sort: Name</option>
+                <option value="missions">Sort: Missions</option>
+              </select>
             </div>
-            <div className="relative w-full md:w-48 mr-2">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-base-500" />
-              <input 
-                type="text" 
-                placeholder="Search candidates..." 
+
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+              <input
+                type="text"
+                placeholder="Search candidates..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-surface-100/50 border border-transparent rounded-lg text-[13px] text-white placeholder:text-base-500 focus:outline-none focus:border-accent-500 focus:bg-surface-200 transition-colors"
+                className="w-48 pl-8 pr-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-xl text-[12px] text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:bg-white/[0.06] transition-all"
               />
             </div>
-            <div className="hidden md:flex items-center gap-1 bg-surface-100 p-1 rounded-lg">
-              <button className="p-1.5 bg-surface-300 rounded text-white shadow-sm"><LayoutGrid className="w-4 h-4" /></button>
-              <button className="p-1.5 text-base-400 hover:text-white transition-colors"><List className="w-4 h-4" /></button>
+
+            <div className="flex items-center gap-1 p-1 rounded-xl border border-white/[0.06] bg-white/[0.03]">
+              <button className="p-1.5 bg-white/[0.08] rounded-lg text-white">
+                <LayoutGrid className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
-        </section>
+        </div>
 
-        {/* Grid */}
+        {/* ── CANDIDATE GRID ───────────────────────────────────────── */}
         <section id="candidates">
           {candidatesLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {[...Array(12)].map((_, i) => (
-                <div key={i} className="h-72 rounded-2xl bg-surface-50 animate-pulse border border-white/5" />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[...Array(9)].map((_, i) => (
+                <div key={i} className="h-[520px] rounded-[22px] bg-white/[0.03] animate-pulse border border-white/[0.04]" />
               ))}
             </div>
           ) : filteredCandidates.length === 0 ? (
-            <div className="text-center py-24 glass-card rounded-2xl">
-              <p className="text-base-400 text-[15px]">No candidates match your search criteria.</p>
+            <div className="text-center py-24 rounded-[22px] border border-white/[0.05] bg-white/[0.02]">
+              <p className="text-slate-500 text-[15px]">No candidates match your search criteria.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {filteredCandidates.map(candidate => {
-                const readiness = candidate.missionsCompleted ? Math.round((candidate.missionsCompleted / curriculumDaysTotal) * 100) : 0;
-                const topics = [1, 7, 12, 16, 22, 27, 31].filter(d => d <= (candidate.missionsCompleted || 0) + 5);
-                
-                return (
-                  <div 
+            <>
+              <p className="text-[11px] text-slate-600 mb-4 px-1">
+                {filteredCandidates.length} candidate{filteredCandidates.length !== 1 ? "s" : ""} found
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-24">
+                {filteredCandidates.map(candidate => (
+                  <CandidateCard3D
                     key={candidate.id}
-                    className="group bg-[rgba(20,24,35,0.7)] backdrop-blur-xl border border-white/5 rounded-[20px] p-5 flex flex-col transition-all duration-300 hover:bg-[rgba(25,30,42,0.8)] hover:border-white/10 hover:shadow-xl hover:shadow-accent-500/5 hover:-translate-y-1 relative overflow-hidden"
-                  >
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-accent-600 to-accent-purple opacity-0 group-hover:opacity-100 transition-opacity" />
-                    
-                    {/* Header */}
-                    <div className="flex items-start justify-between mb-5">
-                      <div className="flex items-center gap-4">
-                        <div className="w-[60px] h-[60px] shrink-0 border border-white/10 rounded-[14px] bg-surface-100 shadow-inner">
-                          <RealisticAvatar name={candidate.name} id={candidate.id} />
-                        </div>
-                        <div className="min-w-0 flex flex-col justify-center">
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            <h4 className="text-[15px] font-bold text-white truncate w-32">
-                              {candidate.name || candidate.id}
-                            </h4>
-                            <CheckCircle2 className="w-3.5 h-3.5 text-accent-cyan shrink-0" />
-                          </div>
-                          <p className="text-[10px] font-semibold text-base-400 uppercase tracking-widest truncate w-32">
-                            {candidate.role}
-                          </p>
-                        </div>
-                      </div>
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold flex shrink-0 border ${
-                        readiness >= 80 ? 'bg-mint-500/10 text-mint-400 border-mint-500/20 shadow-[0_0_10px_rgba(52,211,153,0.1)]' : 
-                        readiness >= 50 ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.1)]' : 
-                        'bg-red-500/10 text-red-400 border-red-500/20'
-                      }`}>
-                        {readiness}% READY
-                      </span>
-                    </div>
-
-                    {/* Stats */}
-                    <div className="grid grid-cols-3 gap-2 mb-5">
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[9px] font-bold text-base-500 uppercase tracking-widest">Missions</span>
-                        <span className="text-[17px] font-bold text-white">{candidate.missionsCompleted || 0}</span>
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[9px] font-bold text-base-500 uppercase tracking-widest">Days</span>
-                        <span className="text-[17px] font-bold text-white">{candidate.missionsCompleted || 0}<span className="text-[11px] text-base-500 font-semibold">/{curriculumDaysTotal}</span></span>
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[9px] font-bold text-base-500 uppercase tracking-widest">Readiness</span>
-                        <span className={`text-[17px] font-bold ${readiness >= 80 ? 'text-mint-400' : readiness >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{readiness}%</span>
-                      </div>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="mb-5">
-                      <div className="flex items-center justify-between text-[9px] font-bold text-base-400 uppercase tracking-widest mb-2">
-                        <span>Cohort Progress</span>
-                        <span>{candidate.missionsCompleted || 0} / {curriculumDaysTotal}</span>
-                      </div>
-                      <div className="h-1.5 w-full bg-surface-200 rounded-full overflow-hidden flex">
-                        <div 
-                          className={`h-full rounded-full transition-all duration-1000 ${readiness >= 80 ? 'bg-mint-500' : readiness >= 50 ? 'bg-amber-400' : 'bg-red-400'}`}
-                          style={{ width: `${readiness}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Chips */}
-                    <div className="mb-6 flex flex-wrap gap-1.5">
-                      {topics.slice(0, 5).map(day => (
-                        <span key={day} className={`text-[9px] px-2 py-0.5 rounded-md font-mono font-bold border ${
-                          day <= (candidate.missionsCompleted || 0) 
-                            ? 'bg-mint-500/10 text-mint-400 border-mint-500/20'
-                            : 'bg-surface-100 text-base-500 border-white/5'
-                        }`}>
-                          D{day.toString().padStart(2, '0')}
-                        </span>
-                      ))}
-                    </div>
-
-                    {/* CTA */}
-                    <div className="mt-auto flex items-center justify-between border-t border-white/5 pt-4">
-                      <span className="text-[10px] font-medium text-base-500 flex items-center gap-1.5">
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        {topics.length} topics
-                      </span>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleStart(candidate.id); }}
-                        className="px-4 py-2 bg-accent-600 hover:bg-accent-500 text-white rounded-lg text-[13px] font-bold transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(79,70,229,0.2)] hover:shadow-[0_0_20px_rgba(79,70,229,0.4)] group/btn"
-                      >
-                        Start Interview <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover/btn:translate-x-0.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                    candidate={candidate}
+                    curriculumDaysTotal={curriculumDaysTotal}
+                    onStartInterview={handleStart}
+                    onViewDossier={handleDossier}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </section>
       </main>
+
+      {/* Dossier drawer */}
+      <CandidateDrawer
+        candidate={dossierCandidate}
+        isOpen={dossierCandidate !== null}
+        onClose={() => setDossierCandidate(null)}
+        onStartInterview={handleStart}
+        curriculumDays={curriculumDaysTotal}
+      />
     </div>
   );
 }
 
-function MetricCard({ icon, value, label }: { icon: React.ReactNode, value: string, label: string }) {
+function MetricCard({ icon, value, label, color }: { icon: React.ReactNode; value: string; label: string; color: string }) {
   return (
-    <div className="bg-surface-50/60 backdrop-blur-md border border-white/5 rounded-2xl p-4 flex flex-col justify-center min-w-[130px]">
-      <div className="flex items-center gap-3 mb-2">
-        <div className="w-8 h-8 rounded-lg bg-surface-100 flex items-center justify-center border border-white/5">
-          {icon}
-        </div>
-        <span className="text-2xl font-bold text-white leading-none">{value}</span>
+    <div className="flex flex-col items-center px-5 py-4 rounded-[16px] border border-white/[0.05] bg-white/[0.03] backdrop-blur-sm min-w-[100px]">
+      <div className="flex items-center gap-2 mb-1.5" style={{ color }}>
+        {icon}
+        <span className="text-[22px] font-bold text-white leading-none">{value}</span>
       </div>
-      <span className="text-[10px] font-medium text-base-400 uppercase tracking-widest">{label}</span>
+      <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-widest">{label}</span>
     </div>
   );
 }

@@ -24,8 +24,10 @@ export function CandidateDrawer({ candidate, isOpen, onClose, onStartInterview, 
   if (candidate.missionsFirstTry && candidate.missionsFirstTry > 15) signals.push("Confident Builder");
   if (candidate.struggles && candidate.struggles > 5) signals.push("Shows Perseverance");
 
-  // Derive mock topics from ID for visual flavor, as requested in prompt
-  const topics = ["RAG", "Embeddings", "Agents", "MCP"];
+  // Use real topics from the backend — completedTopics contains actual mission titles
+  const topics = candidate.completedTopics && candidate.completedTopics.length > 0
+    ? candidate.completedTopics
+    : [];
 
   return (
     <>

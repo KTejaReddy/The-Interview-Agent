@@ -33,6 +33,14 @@ export interface CandidateSummary {
   struggles?: number;
   skipped?: number;
   failed?: number;
+  /** Actual day numbers the candidate passed — drives the per-candidate timeline */
+  completedDays?: number[];
+  /** Days where the candidate was marked skipped */
+  skippedDays?: number[];
+  /** Days where the candidate failed all attempts */
+  failedDays?: number[];
+  /** Titles of passed missions, for the "Interviewable Topics" section */
+  completedTopics?: string[];
 }
 
 export interface SessionSnapshot {

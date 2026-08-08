@@ -152,6 +152,11 @@ class CandidateLoader:
                     "struggles": len(struggles),
                     "skipped": len(skipped),
                     "failed": len(failed),
+                    # Real per-candidate day arrays for the frontend timeline
+                    "completedDays": sorted(int(m["day"]) for m in passed if m.get("day") is not None),
+                    "skippedDays": sorted(int(m["day"]) for m in skipped if m.get("day") is not None),
+                    "failedDays": sorted(int(m["day"]) for m in failed if m.get("day") is not None),
+                    "completedTopics": [str(m.get("title", "")) for m in passed if m.get("title")],
                 }
             )
         return summaries

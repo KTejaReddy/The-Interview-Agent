@@ -55,6 +55,19 @@
   .premium-glow {
     @apply relative before:absolute before:inset-0 before:-z-10 before:rounded-[inherit] before:bg-premium-gradient before:blur-xl before:opacity-0 hover:before:opacity-30 before:transition-opacity before:duration-500;
   }
+  
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+  
+  .preserve-3d {
+    transform-style: preserve-3d;
+  }
+  
+  .mask-avatar {
+    mask-image: radial-gradient(ellipse at bottom, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 80%);
+    -webkit-mask-image: radial-gradient(ellipse at bottom, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 80%);
+  }
 }
 
 /* Atmospheric Background Orbs */

@@ -118,6 +118,13 @@ class CandidateSummary(BaseModel):
     struggles: int = 0
     skipped: int = 0
     failed: int = 0
+    # Actual day numbers for each outcome — the frontend uses these to
+    # render a candidate-specific journey timeline (not a hardcoded array).
+    completedDays: list[int] = Field(default_factory=list)
+    skippedDays: list[int] = Field(default_factory=list)
+    failedDays: list[int] = Field(default_factory=list)
+    # Human-readable topic titles for completed missions
+    completedTopics: list[str] = Field(default_factory=list)
 
 
 class SessionSnapshot(BaseModel):
