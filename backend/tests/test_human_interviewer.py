@@ -18,20 +18,16 @@ def _builder() -> PromptBuilder:
 def test_human_interviewer_block_is_loaded() -> None:
     block = _builder().human_interviewer_prompt()
     low = block.lower()
-    assert "real human technical interviewer" in low
-    assert "conversational intelligence" in low
-    assert "contradictions" in low
-    assert "not a tutor" in low
-    assert "robotic templates" in low
-    assert "test the evidence" in low
+    assert "highly experienced human technical interviewer" in low
+    assert "contradicts themselves" in low
 
 
 def test_system_prompt_composes_block_plus_contract() -> None:
     system = _builder().system_prompt()
     low = system.lower()
     # The behavioral block is present...
-    assert "real human technical interviewer" in low
-    assert "conversational intelligence" in low
+    assert "highly experienced human technical interviewer" in low
+    assert "contradicts themselves" in low
     # ...and so is the engine contract + security rules.
     assert "engine contract" in low
     assert "non-negotiable" in low

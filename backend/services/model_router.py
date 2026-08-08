@@ -33,15 +33,13 @@ from datetime import date, datetime, timedelta, timezone
 #: text and never appear in a generation pool.
 MODEL_REGISTRY: dict[str, dict] = {
     "llama-3.1-8b-instant": {"role": "fast_conversation"},
-    "allam-2-7b": {"role": "lightweight_fallback"},
-    "openai/gpt-oss-20b": {"role": "balanced_reasoning"},
-    # Reasoning model: rejects ``response_format: json_object``, so JSON
-    # mode is skipped and its JSON is extracted after stripping <think>.
+    "allam-2-7b": {"role": "lightweight_fallback", "json_mode": False},
+    "openai/gpt-oss-20b": {"role": "balanced_reasoning", "json_mode": False},
     "qwen/qwen3.6-27b": {"role": "technical_reasoning", "json_mode": False},
-    "groq/compound-mini": {"role": "fast_complex_reasoning"},
+    "groq/compound-mini": {"role": "fast_complex_reasoning", "json_mode": False},
     "llama-3.3-70b-versatile": {"role": "deep_reasoning"},
-    "openai/gpt-oss-120b": {"role": "advanced_reasoning"},
-    "groq/compound": {"role": "complex_agentic"},
+    "openai/gpt-oss-120b": {"role": "advanced_reasoning", "json_mode": False},
+    "groq/compound": {"role": "complex_agentic", "json_mode": False},
     "meta-llama/llama-prompt-guard-2-22m": {"role": "guard_light", "security_only": True},
     "meta-llama/llama-prompt-guard-2-86m": {"role": "guard_strong", "security_only": True},
     "openai/gpt-oss-safeguard-20b": {"role": "safeguard", "security_only": True},
@@ -95,26 +93,38 @@ def quotas_for(model: str) -> dict:
 TASK_POOLS: dict[str, tuple[str, ...]] = {
     "simple": (
         "llama-3.1-8b-instant",
+        "allam-2-7b",
         "llama-3.3-70b-versatile",
     ),
     "medium": (
+        "openai/gpt-oss-20b",
+        "qwen/qwen3.6-27b",
+        "groq/compound-mini",
         "llama-3.3-70b-versatile",
         "llama-3.1-8b-instant",
     ),
     "strong": (
         "llama-3.3-70b-versatile",
-        "llama-3.1-8b-instant",
+        "openai/gpt-oss-120b",
+        "groq/compound",
     ),
     "advanced": (
+        "openai/gpt-oss-120b",
+        "groq/compound",
         "llama-3.3-70b-versatile",
-        "llama-3.1-8b-instant",
     ),
     "question": (
         "llama-3.3-70b-versatile",
+        "qwen/qwen3.6-27b",
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-120b",
         "llama-3.1-8b-instant",
     ),
     "feedback": (
         "llama-3.3-70b-versatile",
+        "openai/gpt-oss-120b",
+        "qwen/qwen3.6-27b",
+        "openai/gpt-oss-20b",
         "llama-3.1-8b-instant",
     ),
     "guard_light": (
