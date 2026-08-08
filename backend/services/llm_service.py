@@ -1146,10 +1146,6 @@ class LLMService:
             if reserved:
                 self._health.release_reservation(model, est_total_tokens)
 
-            if network_requests >= 2:
-                logger.warning("Reached fallback limit (2 network requests).")
-                break
-
             if model != candidates[-1]:
                 logger.info("Fallback triggered: moving from %s to next model.", model)
 
