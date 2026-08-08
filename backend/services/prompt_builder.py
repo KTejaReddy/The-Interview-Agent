@@ -35,10 +35,26 @@ _BANNED_REACTION = (
     "earlier you said",
     "based on your previous",
     "according to your previous",
+    "let's move on",
+    "let me reframe",
+    "let's make it concrete",
+    "that's okay",
+    "can you give me an example",
+    "now let's discuss",
+    "let's transition to",
+)
+
+#: Trailing dangling connectors the LLM sometimes leaves on a reaction
+#: ("...embeddings, but") before the engine appends the question.  Stripped
+#: so the assembled line never reads "...but What problem does X?".
+_DANGLING_CONNECTOR = re.compile(
+    r"[,;:\s]*(but|and|so|also|though|although|while|however|yet)$",
+    re.IGNORECASE,
 )
 
 #: Every template file we expect to find in the prompts directory.
 _TEMPLATES = (
+    "human_interviewer",
     "interviewer_system",
     "generate_question",
     "evaluate_answer",
@@ -66,7 +82,33 @@ class PromptBuilder:
 
     # --- system -----------------------------------------------------------
 
+    def human_interviewer_prompt(self) -> str:
+        """The dedicated human-interviewer behavioral block
+        (``prompts/human_interviewer.md``): how the interviewer listens,
+        remembers, reacts and decides what to say next.  This is the single
+        authoritative home for interviewer persona/behavior — the per-task
+        templates only carry their own mechanics, and the engine contract in
+        ``interviewer_system`` only carries security + plumbing."""
+        return self._templates["human_interviewer"]
+
     def system_prompt(self) -> str:
+        """Composed system prompt for conversation-facing generation
+        (questions and follow-ups): the dedicated human-interviewer block
+        plus the compact engine contract and security rules."""
+        return (
+            f"{self._templates['human_interviewer']}\n\n"
+            f"{self._templates['interviewer_system']}"
+        )
+
+    def assessment_system_prompt(self) -> str:
+        """Lean system prompt for internal assessment calls (answer
+        evaluation, final feedback): the engine contract + security rules.
+
+        The full human-interviewer block stays on the conversation-facing
+        generation calls, where it shapes what the candidate hears.  The
+        internal calls only produce structured verdicts/feedback — their
+        task templates already carry the judgment rules — so paying the
+        full persona there would add ~3.6K tokens per call for no gain."""
         return self._templates["interviewer_system"]
 
     # --- shared context ---------------------------------------------------
@@ -415,6 +457,20 @@ class PromptBuilder:
                 consecutive_weak=consecutive_weak,
                 recovered=recovered,
             )
+        reaction = _DANGLING_CONNECTOR.sub("", reaction).strip()
+        if not reaction:
+            return self._reaction_for(
+                last_verdict,
+                index,
+                consecutive_weak=consecutive_weak,
+                recovered=recovered,
+            )
+        # The engine appends the question right after the reaction; a
+        # reaction that does not end in punctuation would glue the two
+        # together ("Let's shift gears What problem does...").  Normalize
+        # to a complete short sentence.
+        if reaction[-1] not in ".!?\u2014:\u2026":
+            reaction += "."
         return reaction
 
     def next_question_bridge(

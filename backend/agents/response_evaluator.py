@@ -181,7 +181,8 @@ class ResponseEvaluator:
                 answer=answer,
             )
             draft = await self._llm.structured_completion(
-                system_prompt=self._prompts.system_prompt(),
+                # Internal assessment: lean contract, not the full persona.
+                system_prompt=self._prompts.assessment_system_prompt(),
                 user_prompt=prompt,
                 schema=EvaluationDraft,
             )

@@ -73,23 +73,13 @@ Let's look at that differently —
 # spoken connectors ONLY — never announce the curriculum topic, never
 # explain the relationship at length.
 [transition_related]
-and related to that — 
-and since those connect — 
-one more thing on that thread — 
 
 # Transitions when the next topic is a fresh area.  Short and topic-free:
 # the interviewer never reads the curriculum title to the candidate.
 [transition_new]
-let's switch gears for a moment — 
-let's try something else — 
-okay, let's move on — 
-one more thing — 
 
 # Transition when we stay on the SAME topic (deeper second main question).
 [transition_same]
-let's push a bit deeper on that — 
-let's stay on that a moment longer — 
-one more angle on this — 
 
 [final_question]
 We've covered a good range of topics today. Before we wrap up, do you have

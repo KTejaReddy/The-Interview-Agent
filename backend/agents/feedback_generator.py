@@ -64,7 +64,8 @@ class FeedbackGenerator:
         prompt = self._prompts.feedback_prompt(context)
         try:
             draft: FeedbackDraft = await self._llm.structured_completion(
-                system_prompt=self._prompts.system_prompt(),
+                # Internal assessment: lean contract, not the full persona.
+                system_prompt=self._prompts.assessment_system_prompt(),
                 user_prompt=prompt,
                 schema=FeedbackDraft,
             )

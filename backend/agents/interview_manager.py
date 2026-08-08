@@ -155,7 +155,10 @@ class InterviewManager:
         t0 = time.perf_counter()
         await self._sessions.sweep_expired()
         # Record the candidate's utterance before dispatching.
-        self._append(session, "candidate", message)
+        if session.transcript and session.transcript[-1]["role"] == "candidate":
+            session.transcript[-1]["text"] = message
+        else:
+            self._append(session, "candidate", message)
         state = session.state_machine.current
 
         if state == InterviewState.START:

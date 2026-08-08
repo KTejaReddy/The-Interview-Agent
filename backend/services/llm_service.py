@@ -1000,6 +1000,7 @@ class LLMService:
                 candidates.append(m)
 
         last_error: Exception | None = None
+        network_requests = 0
         
         for model in candidates:
             attempts = 0
@@ -1037,9 +1038,10 @@ class LLMService:
                 continue
             reserved = True
             
-            while attempts < 4:
+            while attempts < 2:
                 attempts += 1
                 try:
+                    network_requests += 1
                     t0 = time.perf_counter()
                     raw = await self._provider.complete(
                         model=model,
@@ -1090,7 +1092,7 @@ class LLMService:
                         kw in exc_str
                         for kw in ["429", "capacity", "timeout", "rate limit", "503"]
                     )
-                    if is_retryable and not quota_exhausted and attempts < 4:
+                    if is_retryable and not quota_exhausted and attempts < 1:
                         delay = [1, 2, 4][attempts - 1]
                         logger.warning("Retryable error on %s (attempt %d). Sleeping %ds: %s", model, attempts, delay, exc)
                         await asyncio.sleep(delay)
@@ -1143,6 +1145,10 @@ class LLMService:
 
             if reserved:
                 self._health.release_reservation(model, est_total_tokens)
+
+            if network_requests >= 2:
+                logger.warning("Reached fallback limit (2 network requests).")
+                break
 
             if model != candidates[-1]:
                 logger.info("Fallback triggered: moving from %s to next model.", model)

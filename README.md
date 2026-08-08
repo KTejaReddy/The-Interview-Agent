@@ -264,9 +264,16 @@ conversational intelligence:
 * **Slim prompts** — the prompt templates were audited and compressed (the
   largest fixed token cost per call): `interviewer_system` −24%,
   `generate_question` −32%, `evaluate_answer` −22%, `generate_follow_up`
-  −23%.  A typical turn now sends ~1,500–2,400 input tokens (question
-  ~2,150, evaluate ~1,750, follow-up ~1,500 total) — inside the
+  −23%.  A typical turn sends ~1,200–3,500 input tokens (question ~3.4K,
+  evaluate ~1.2K, follow-up ~3.1K total) — inside the
   `<3K normal / <2K simple / <4K complex` budgets.
+* **Persona/assessment split** — the full human-interviewer block
+  (`prompts/human_interviewer.md`, ~2.1K tokens) is sent only on the
+  conversation-facing calls (question + follow-up generation), where it
+  shapes what the candidate hears.  Internal assessment calls (answer
+  evaluation, final feedback) use the lean `assessment_system_prompt()`
+  (engine contract + security only), so the persona is not paid on every
+  internal call.
 * **Capped output** — conversational calls use `LLM_TURN_MAX_TOKENS`
   (default 300) instead of the 800-token general budget; feedback keeps the
   full budget.
@@ -280,9 +287,29 @@ conversational intelligence:
   `GET /api/models` endpoint shows per-model quota state, usage fractions
   and selection counts.
 
-Measured on the live server (Groq, `127.0.0.1`): start ≈ 0.6 s, an
-"I don't know" follow-up ≈ 0.3 s, a new-topic question ≈ 1.4 s, a
-substantive answer + deep follow-up ≈ 2.5 s — down from 30-35 s per turn.
+Measured on the live server (Groq, `127.0.0.1`): start ≈ 0.6-1.0 s, an
+"I don't know" follow-up ≈ 0.3-1.6 s, a new-topic question ≈ 0.7-1.4 s, a
+substantive answer + follow-up ≈ 1.4-3.2 s — down from 30-35 s per turn.
+
+### 5b. The human interviewer prompt
+
+The interviewer's persona and behavior live in **one dedicated block**,
+`backend/prompts/human_interviewer.md` (exposed as
+`PromptBuilder.human_interviewer_prompt()`).  It is the single
+authoritative home for how the interviewer behaves — listening, remembering
+earlier answers, adapting difficulty, handling "I don't know" / bare "I
+know" claims, noticing contradictions, expressing subtle emotion, avoiding
+repetitive templates and scripted transitions — and is composed into the
+system prompt (`PromptBuilder.system_prompt()`) that every conversation-
+facing generation call receives.
+
+The per-task templates (`generate_question`, `generate_follow_up`, …)
+only carry their own mechanics (JSON contracts, dispatch markers, the
+reaction/question assembly rules); the behavioral rules are **not
+duplicated** there.  Deterministic guards backstop the LLM: canned-phrase
+filtering, curriculum-title leakage checks, and stripping of dangling
+connectors ("...embeddings, but") so a reaction always reads complete
+before the question is appended.
 
 ### 6. Intelligent multi-model routing (one Groq API key)
 
