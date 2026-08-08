@@ -190,6 +190,7 @@ class QuestionPlanner:
             learning_objective=objective,
             concept=concept,
             expected_evidence=list(used_intent.expected_evidence),
+            reaction=draft.reaction or "",
         )
 
     # ------------------------------------------------------------------ topic choice

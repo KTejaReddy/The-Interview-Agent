@@ -12,8 +12,9 @@ The engine:
 - plans every question **adaptively** — the next topic is scored from the
   candidate's completed missions, attempts, struggles, engagement and the
   conversation so far (never from uncompleted material),
-- enforces **8+ main questions across 4+ distinct curriculum days** as a
-  hard engine rule (never an LLM suggestion),
+- enforces **8+ actual interviewer questions across 4+ distinct curriculum
+  days** as a hard engine rule (never an LLM suggestion) — a follow-up is
+  also a question, so the counter reflects the real conversation,
 - follows coherent **progression paths** (RAG path, agent path, production
   path) through the candidate's own completed days,
 - asks **intelligent follow-ups** (deeper / simplify / recovery / probe),
@@ -58,8 +59,9 @@ The project is driven entirely by three mandatory datasets that it
 - ✅ **Deterministic duplicate prevention** — token-set Jaccard checks against
   every previous question + guaranteed-fresh fallback follow-ups
 - ✅ **Concise, evidence-driven length** — MIN 8 / target 8–10 / hard max 12
-  main questions; the interview finishes as soon as 8+ questions, 4+ days
-  and sufficient evidence are reached (never a 15–20 question marathon)
+  ACTUAL questions (main questions + follow-ups — a follow-up is also a
+  question); the interview finishes as soon as 8+ questions, 4+ days and
+  sufficient evidence are reached (never a 15–20 question marathon)
 - ✅ **Topic saturation** — max 2 main questions per day, at most one
   follow-up per topic, repeated failures mark a topic weak and move on
 - ✅ **Context memory** — full-session memory plus candidate-mention tracking
@@ -131,9 +133,9 @@ interview never runs on simply because more topics are available.
 
 | Setting                    | Value | Meaning                                     |
 | -------------------------- | ----- | ------------------------------------------- |
-| `INTERVIEW_MIN_QUESTIONS`  | 8     | Hard requirement (never below)              |
-| `INTERVIEW_TOTAL_QUESTIONS`| 10    | Soft target — usual finish line             |
-| `INTERVIEW_MAX_QUESTIONS`  | 12    | Absolute safety ceiling on main questions   |
+| `INTERVIEW_MIN_QUESTIONS`  | 8     | Hard requirement on ACTUAL questions (mains + follow-ups) |
+| `INTERVIEW_TOTAL_QUESTIONS`| 10    | Soft target on actual questions — usual finish line |
+| `INTERVIEW_MAX_QUESTIONS`  | 12    | Absolute safety ceiling on actual questions   |
 | `INTERVIEW_MIN_DAYS`       | 4     | Hard requirement (never below)              |
 
 ### Module map
@@ -234,7 +236,7 @@ The Vite dev server proxies `/api` to `http://localhost:8000`.
 
 ```bash
 cd backend
-pytest                       # 95 tests, fully offline (mock LLM + fixtures)
+pytest                       # 111 tests, fully offline (mock LLM + fixtures)
 python scripts/live_tests.py # live scenarios A–H against the real datasets
 ```
 
@@ -438,17 +440,20 @@ Validation errors return a clean 400 with field details.
   neighbours win so the interview collects depth instead of day-count
   (a 13-question / 8-day hop-fest is structurally impossible).
 - **Coverage enforcement** — `_should_terminate` refuses to end until
-  8+ main questions AND 4+ distinct days; the planner prioritizes new days
-  when coverage is low, then deepens (max 2 mains per day) so interviews
-  stay in the 4–6 day / 8–10 question band instead of hopping to a new day
-  every question.
+  8+ ACTUAL questions (main questions + follow-ups; a follow-up is also a
+  question) AND 4+ distinct days; the planner prioritizes new days when
+  coverage is low, then deepens (max 2 mains per day) so interviews stay
+  in the 4–6 day / 8–10 question band instead of hopping to a new day
+  every question. The 12-question ceiling applies to actual questions, so
+  a follow-up-dense interview can never run long.
 - **Evidence-based completion** — once the minimums are met, the interview
-  ends when the soft budget is reached **or** every touched topic has a
-  *settled* assessment: demonstrated (best score ≥ 7, no open
+  ends when the soft budget (10 actual) is reached **or** every touched
+  topic has a *settled* assessment: demonstrated (best score ≥ 7, no open
   failures/claims) **or** exhausted (moved on after repeated failures or
   bare claims). An all-"I don't know" interview therefore ends at the
-  8-question minimum instead of being dragged to the soft target with
-  topic revisits — and an absolute safety cap guarantees termination.
+  8-question minimum (4 mains + 4 follow-ups across 4 days) instead of
+  being dragged to the soft target with topic revisits — and an absolute
+  safety cap guarantees termination.
 - **Evidence-based evaluation** — the evaluator never treats surface
   phrases as competence:
   - "I don't know" → deterministic weak/simplify (never rewarded),
@@ -485,19 +490,47 @@ Validation errors return a clean 400 with field details.
   the same page…" on repeat), no long commentary on non-answers, no
   over-use of the healthcare/capstone framing, and no mention-prefix spam
   ("You mentioned X earlier") on every question.
-- **Deterministic conversational bridge** — the engine (not the LLM) owns
-  all spoken transitions between main questions: a short reaction keyed by
-  the previous answer's verdict ("Good —", "No worries —", "I see —"…)
-  plus a rotated, **topic-free** transition that knows whether the next
-  question stays on the same topic ("let's push a bit deeper…"), relates
-  to it ("and related to that —"), or is a fresh area ("let's switch
-  gears…"). The interviewer never reads a curriculum title to the
-  candidate (no "let's talk about Security, Privacy & Guardrails") and
-  never explains the relationship at length. Wording lives in
-  `prompts/messages.md` rotation pools; every third turn skips the
-  reaction and every fourth skips the transition, so the rhythm stays
-  human. The LLM is told to ask only the pure question — transitions are
-  never doubled or inconsistent.
+- **LLM-generated reactions (no prefixed-phrase system)** — the reaction
+  to the candidate's last answer is generated by the LLM from what the
+  candidate actually said: it acknowledges the correct part, targets the
+  missing piece, gently identifies a misconception, or recognizes a
+  recovery — never a canned "Great answer!" / "Let's try a simpler
+  angle" dictionary. The question prompt receives a structured
+  **interviewer state** (emotion, firmness 0–3, last verdict + notes,
+  recovery flag) plus the full transcript, and writes a short content-aware
+  `reaction` alongside the pure `question`; the reaction naturally bridges
+  into the next question. Canned phrases, curriculum titles and day
+  numbers are rejected deterministically and fall back to the neutral
+  `messages.md` pools — the pools are a safety net, never the primary
+  mechanism.
+- **Deterministic topic transitions** — when the LLM leaves the reaction
+  empty, the engine adds a short, **topic-free** transition that knows
+  whether the next question stays on the same topic ("let's push a bit
+  deeper…"), relates to it ("and related to that —"), or is a fresh area
+  ("let's switch gears…"). The interviewer never reads a curriculum title
+  to the candidate (no "let's talk about Security, Privacy & Guardrails")
+  and never explains the relationship at length.
+- **Emotional trajectory (firmness + recovery)** — the interviewer's
+  tone is not a fixed template: it follows the conversation. The engine
+  tracks the *consecutive weak-answer streak* ("I don't know" / bare
+  claims) into an explicit firmness level (0 calm → 3 firm) and an emotion
+  (neutral → concerned → mildly frustrated → firm; skeptical for repeated
+  "I know" claims; relieved on a recovery), derived in `ConversationMemory`
+  and passed to every prompt as data. The interviewer becomes gradually
+  more direct under repeated non-answers, recognizes improvement with a
+  recovery reaction, and is never insulting.
+- **Full-conversation awareness** — every question, evaluation and
+  follow-up prompt receives the **complete Q/A transcript** (all earlier
+  questions *and* answers, not just the last one), so the interviewer can
+  reason over the whole interview: earlier claims, mistakes, examples and
+  topics. Long-term memory aggregates (mention tracking, per-topic
+  assessment, contradictions) sit alongside it.
+- **Contradiction detection** — the evaluator compares each answer against
+  the full transcript; when the candidate contradicts an earlier statement
+  (two claims that can't both be true), the interviewer gently probes the
+  discrepancy ("That's different from what you said earlier — which did
+  you mean?") instead of letting it pass silently, and the contradiction
+  is recorded for later prompts and feedback.
 - **Relevant context retention** — the mock (and the real LLM's prompt)
   reference concepts the candidate raised earlier, but only when they are
   actually related to the question at hand and at most ~1 in 4 questions —

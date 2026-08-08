@@ -228,8 +228,9 @@ def test_claim_gets_verification_even_after_non_answer() -> None:
 
 
 def test_interviews_finish_in_concise_band() -> None:
-    """Completed interviews stay in the 8..12 main-question band — never
-    the old 15-20 question marathons — while keeping the minimums."""
+    """Completed interviews stay in the 8..12 ACTUAL-question band — main
+    questions plus follow-ups — never the old 15-20 question marathons —
+    while keeping the minimums (8 mains / 4 days)."""
     strong = (
         "I would break the problem into clear components, choose the right "
         "data model, then design the interfaces between them. In production "
@@ -246,5 +247,7 @@ def test_interviews_finish_in_concise_band() -> None:
             data = _run_to_completion(client, session_id, answer)
             assert data["done"] is True, label
             assert len(data["_days_seen"]) >= 4, label
-            mains = data["questionNumber"]
-            assert 8 <= mains <= 12, f"{label}: {mains} main questions"
+            total_questions = data["questionNumber"]
+            assert 8 <= total_questions <= 12, (
+                f"{label}: {total_questions} actual questions"
+            )

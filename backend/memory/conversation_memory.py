@@ -60,12 +60,21 @@ class ConversationMemory:
         #: Curriculum concepts the candidate brought up themselves (used to
         #: reference their own words later in the interview).
         self.mentions: list[str] = []
+        #: Contradictions the evaluator noticed between the candidate's
+        #: earlier statements and a later answer (surfaced in prompts and
+        #: feedback so the interviewer can gently call them out).
+        self.contradictions: list[str] = []
 
     def add_mentions(self, concepts: list[str]) -> None:
         """Record curriculum concepts the candidate mentioned in an answer."""
         for concept in concepts:
             if concept not in self.mentions:
                 self.mentions.append(concept)
+
+    def add_contradiction(self, statement: str) -> None:
+        """Record a contradiction between two of the candidate's answers."""
+        if statement not in self.contradictions:
+            self.contradictions.append(statement)
 
     # --- writers ---------------------------------------------------------
 
@@ -111,7 +120,11 @@ class ConversationMemory:
         return len(self._turns)
 
     def recent_turns(self, limit: int | None = None) -> list[TurnRecord]:
-        limit = limit or self._max_history_turns
+        """Most recent turns; ``limit=None`` returns the complete history so
+        prompts can reason over the ENTIRE conversation (the interviewer
+        must never forget an earlier claim or mistake)."""
+        if limit is None:
+            return list(self._turns)
         return self._turns[-limit:]
 
     def last(self) -> TurnRecord | None:
@@ -144,6 +157,77 @@ class ConversationMemory:
         ]
 
     @property
+    def consecutive_weak(self) -> int:
+        """Trailing streak of non-substantive answers (weak / bare-claim
+        verdicts).  Drives the interviewer's escalating firmness: the more
+        consecutive struggles, the more direct the tone — exactly like a
+        human interviewer becoming gradually firmer."""
+        streak = 0
+        for turn in reversed(self._turns):
+            if turn.verdict in (Verdict.WEAK, Verdict.UNCLEAR):
+                streak += 1
+            else:
+                break
+        return streak
+
+    @property
+    def firmness(self) -> int:
+        """Interviewer firmness 0 (calm) .. 3 (firm), derived from the
+        conversation — never a fixed template.  Repeated struggles make the
+        interviewer gradually more direct; a demonstrated answer resets it."""
+        streak = self.consecutive_weak
+        if streak >= 3:
+            return 3
+        if streak >= 2:
+            return 2
+        if streak >= 1:
+            return 1
+        return 0
+
+    @property
+    def recovered(self) -> bool:
+        """True when the last answer was strong but an earlier answer on the
+        same topic was weak / wrong / a bare claim — the candidate improved,
+        and the interviewer should recognize the recovery."""
+        last = self.last()
+        if last is None or last.verdict not in (Verdict.GOOD, Verdict.EXCELLENT):
+            return False
+        return any(
+            turn.topic == last.topic
+            and turn.verdict in (Verdict.WEAK, Verdict.WRONG, Verdict.UNCLEAR)
+            for turn in self._turns[:-1]
+        )
+
+    @property
+    def interviewer_emotion(self) -> str:
+        """Subtle internal emotional state derived from the conversation
+        (never shown to the candidate).  Calibrates the interviewer's tone:
+        impressed by sustained strength, concerned by wrong answers,
+        gradually firmer under repeated non-answers, relieved on recovery."""
+        last = self.last()
+        if last is None:
+            return "neutral"
+        if self.recovered:
+            return "relieved"
+        if last.verdict in (Verdict.GOOD, Verdict.EXCELLENT):
+            return "impressed" if last.score >= 9 else "encouraging"
+        if last.verdict == Verdict.WRONG:
+            return "concerned"
+        if last.verdict == Verdict.UNCLEAR:
+            # Repeated "I know" without evidence: neutral -> skeptical -> firm.
+            if self.consecutive_weak >= 3:
+                return "firm"
+            if self.consecutive_weak >= 2:
+                return "skeptical"
+            return "neutral"
+        # Verdict.WEAK
+        if self.consecutive_weak >= 3:
+            return "firm"
+        if self.consecutive_weak >= 2:
+            return "mildly_frustrated"
+        return "concerned"
+
+    @property
     def average_score(self) -> float:
         if not self._turns:
             return 0.0
@@ -155,7 +239,9 @@ class ConversationMemory:
         return max(0.0, min(1.0, self.average_score / 10.0))
 
     def format_transcript(self, limit: int | None = None) -> str:
-        """Compact interview log used to ground feedback generation."""
+        """Compact interview log used to ground feedback generation and give
+        every prompt full conversational awareness.  ``limit=None`` includes
+        every turn of the interview."""
         lines: list[str] = []
         for turn in self.recent_turns(limit):
             lines.append(

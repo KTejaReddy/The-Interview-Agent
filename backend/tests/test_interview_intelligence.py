@@ -897,6 +897,82 @@ async def test_feedback_topics_match_interview_state() -> None:
     assert "0 curriculum topics" not in feedback.summary
 
 
+def test_feedback_score_gated_by_evidence() -> None:
+    """A 0/10 average can never produce an unexplained 30/100: the coverage
+    term is gated by demonstrated quality, so no evidence -> no score."""
+    from agents.feedback_generator import FeedbackGenerator
+    from memory.conversation_memory import ConversationMemory
+
+    plan = InterviewPlan()
+    plan.days_covered = [0, 1, 2, 3, 4]
+    memory = ConversationMemory()
+    for index in range(5):
+        memory.add_turn(
+            question="q",
+            topic=f"Topic {index}",
+            day_index=index,
+            question_type=QuestionType.CONCEPTUAL,
+            difficulty=Difficulty.MEDIUM,
+            answer="I don't know",
+            score=0,
+            verdict=Verdict.WEAK,
+            follow_up=FollowUpStrategy.NEXT_TOPIC,
+        )
+    context = ContextManager().build(
+        state=InterviewState.EVALUATION,
+        candidate=_profile(),
+        plan=plan,
+        memory=memory,
+        question_index=0,
+    )
+    generator = FeedbackGenerator(LLMService(settings), PromptBuilder(settings))
+    metrics = generator.compute_internal_metrics(context)
+    assert metrics.score < 10, f"0/10 average produced {metrics.score}/100"
+
+    # With real evidence the same coverage yields a proportionally high score.
+    memory2 = ConversationMemory()
+    for index in range(5):
+        memory2.add_turn(
+            question="q",
+            topic=f"Topic {index}",
+            day_index=index,
+            question_type=QuestionType.CONCEPTUAL,
+            difficulty=Difficulty.MEDIUM,
+            answer="strong answer",
+            score=9,
+            verdict=Verdict.EXCELLENT,
+            follow_up=FollowUpStrategy.NEXT_TOPIC,
+        )
+    context2 = ContextManager().build(
+        state=InterviewState.EVALUATION,
+        candidate=_profile(),
+        plan=plan,
+        memory=memory2,
+        question_index=0,
+    )
+    metrics2 = generator.compute_internal_metrics(context2)
+    assert metrics2.score >= 80
+
+
+def test_mock_feedback_score_gated_by_evidence() -> None:
+    """The mock feedback score follows the same evidence gate (0/10 average
+    -> ~0, not an unexplained 30)."""
+    from services.llm_service import MockProvider
+
+    user = (
+        "ASSESSMENT STATE (per-topic, derived from the actual interview)\n"
+        "- Topic A: knowledge_status=incorrect, confidence=low, failures=2, bare_claims=0, score range 0-0/10\n"
+        "- Topic B: knowledge_status=incorrect, confidence=low, failures=2, bare_claims=0, score range 0-0/10\n"
+        "PROFILE TOPICS NOT TESTED\nnone\n"
+        "FULL INTERVIEW TRANSCRIPT\n"
+        "[Q1] Topic A | score=0/10 verdict=weak\n"
+        "[Q2] Topic B | score=0/10 verdict=weak\n"
+        "CANDIDATE PROFILE\nTest candidate"
+    )
+    feedback = MockProvider()._mock_feedback(user)
+    assert feedback["score"] < 10, f"0/10 average produced {feedback['score']}"
+
+
 # ---------------------------------------------------------------------------
 # conversational bridge: reaction + transition + question
 # ---------------------------------------------------------------------------
@@ -998,9 +1074,10 @@ def test_bridge_never_leaks_comment_lines() -> None:
     from services.prompt_builder import PromptBuilder
 
     prompts = PromptBuilder(settings)
-    for pool_name in ("reaction_good", "reaction_weak", "reaction_claim",
-                      "reaction_wrong", "transition_related", "transition_new",
-                      "transition_same"):
+    for pool_name in ("reaction_good", "reaction_recovery", "reaction_weak",
+                      "reaction_weak2", "reaction_weak3", "reaction_claim",
+                      "reaction_claim2", "reaction_wrong", "transition_related",
+                      "transition_new", "transition_same"):
         for entry in prompts._pool(pool_name):
             assert not entry.startswith("#"), f"{pool_name} leaked: {entry!r}"
     for index in range(24):
@@ -1053,6 +1130,435 @@ def test_mock_feedback_no_false_engaged_strength() -> None:
     assert feedback["strengths"]  # schema requires >= 1
     assert feedback["gaps"]  # weak topics must appear as gaps
     assert "did not demonstrate" in feedback["summary"]
+
+
+# ---------------------------------------------------------------------------
+# LLM-generated content-aware reaction (pools are only a fallback)
+# ---------------------------------------------------------------------------
+
+
+def _fallback_reaction(question: str = "Can you explain vector embeddings?", **kwargs) -> str:
+    return PromptBuilder(settings).reaction_or_fallback(
+        question, topic="Embeddings", index=0, **kwargs
+    )
+
+
+def test_reaction_or_fallback_keeps_valid_reaction() -> None:
+    """A content-aware LLM reaction passes through unchanged."""
+    reaction = "That's the piece I was after — hybrid search for exact IDs."
+    assert _fallback_reaction(reaction) == reaction
+
+
+def test_reaction_or_fallback_rejects_canned_phrases() -> None:
+    """Canned acknowledgement phrases never reach the candidate: they fall
+    back to the (neutral, varied) deterministic pools."""
+    for canned in (
+        "Glad to hear it — let's move on.",
+        "Let's try a simpler angle.",
+        "You mentioned Docker earlier.",
+        "Based on your previous answer, what's the core job of X?",
+    ):
+        fallback = _fallback_reaction(canned, last_verdict="good")
+        assert fallback != canned
+        assert not any(
+            phrase in fallback.lower()
+            for phrase in ("glad to hear", "simpler angle", "you mentioned",
+                           "core job", "based on your previous")
+        )
+        assert fallback  # a reaction is still produced
+
+
+def test_reaction_or_fallback_rejects_metadata_leak() -> None:
+    """A reaction must never quote the curriculum topic title or a day
+    number — those fall back to the pools too."""
+    fallback = _fallback_reaction(
+        "Let's talk about Day 27 — Security, Privacy & Guardrails.",
+        last_verdict="weak",
+    )
+    assert "Security, Privacy & Guardrails" not in fallback
+    assert "Day 27" not in fallback
+
+
+def test_reaction_or_fallback_empty_uses_pool() -> None:
+    """Empty reaction -> deterministic pool reaction (fallback path)."""
+    reaction = _fallback_reaction("", last_verdict="good")
+    assert any(
+        reaction.startswith(g)
+        for g in ("Good", "Nice", "Right", "Exactly", "That's", "Good thinking")
+    )
+
+
+def test_memory_firmness_and_emotion() -> None:
+    """The interviewer state derives from the conversation: firmness and
+    emotion escalate with repeated non-answers and reset on a strong answer,
+    and a recovery is recognized."""
+    memory = ConversationMemory()
+
+    def add(verdict: Verdict, topic: str = "RAG", score: int = 2) -> None:
+        memory.add_turn(
+            question="q",
+            topic=topic,
+            day_index=0,
+            question_type=QuestionType.CONCEPTUAL,
+            difficulty=Difficulty.MEDIUM,
+            answer="answer",
+            score=score,
+            verdict=verdict,
+            follow_up=FollowUpStrategy.NEXT_TOPIC,
+        )
+
+    assert memory.firmness == 0
+    assert memory.interviewer_emotion == "neutral"
+    add(Verdict.WEAK)
+    assert memory.firmness == 1
+    assert memory.interviewer_emotion == "concerned"
+    add(Verdict.WEAK)
+    assert memory.firmness == 2
+    assert memory.interviewer_emotion == "mildly_frustrated"
+    add(Verdict.UNCLEAR)
+    assert memory.firmness == 3
+    assert memory.interviewer_emotion == "firm"
+    # A strong answer resets firmness and recognizes the recovery.
+    add(Verdict.EXCELLENT, score=9)
+    assert memory.firmness == 0
+    assert memory.recovered is True
+    assert memory.interviewer_emotion == "relieved"
+
+
+def test_mock_question_reaction_content_seeded() -> None:
+    """The mock's reaction acknowledges the previous answer's substance
+    (seeded by its content) and escalates with firmness for non-answers."""
+    from services.llm_service import MockProvider
+
+    mock = MockProvider()
+    substantive = mock._mock_question(
+        "question 3 of 10\n- Consecutive weak answers so far: 0\n"
+        "CANDIDATE'S PREVIOUS ANSWER\n"
+        "We would embed each chunk and compare vectors with cosine similarity.\n\n"
+        "PREVIOUS QUESTIONS ASKED\nnone\n- Question type: conceptual\n"
+        "- Learning objective: Store embeddings in a vector store\n"
+        "- Technical concept: how to store embeddings",
+        "Vector Databases",
+    )
+    assert substantive["reaction"]
+    assert any(
+        substantive["reaction"].startswith(r)
+        for r in ("That's a useful angle", "Good —", "Right,", "Yeah —")
+    )
+    # Non-substantive answer + high streak -> firmer reaction.
+    firm = mock._mock_question(
+        "question 6 of 10\n- Consecutive weak answers so far: 4\n"
+        "CANDIDATE'S PREVIOUS ANSWER\nI don't know\n\n"
+        "PREVIOUS QUESTIONS ASKED\nnone\n- Question type: conceptual\n"
+        "- Learning objective: Store embeddings in a vector store\n"
+        "- Technical concept: how to store embeddings",
+        "Vector Databases",
+    )
+    gentle = mock._mock_question(
+        "question 6 of 10\n- Consecutive weak answers so far: 0\n"
+        "CANDIDATE'S PREVIOUS ANSWER\nI don't know\n\n"
+        "PREVIOUS QUESTIONS ASKED\nnone\n- Question type: conceptual\n"
+        "- Learning objective: Store embeddings in a vector store\n"
+        "- Technical concept: how to store embeddings",
+        "Vector Databases",
+    )
+    assert any(
+        firm["reaction"].startswith(r)
+        for r in ("I've tried this a couple of ways now", "Alright, let's leave")
+    )
+    assert any(
+        gentle["reaction"].startswith(r) for r in ("No worries", "That's okay")
+    )
+
+
+def test_should_terminate_total_questions_cap() -> None:
+    """The 12-question safety ceiling applies to ACTUAL questions (mains +
+    follow-ups), so a follow-up-dense interview cannot exceed it even before
+    the 10-main soft target."""
+    from agents.interview_manager import InterviewManager
+    from memory.conversation_memory import ConversationMemory
+    from models.session import InterviewSession
+
+    retriever = _retriever()
+    profile = _profile("CAND-002")
+    manager = InterviewManager.__new__(InterviewManager)
+    manager._settings = settings
+
+    session = InterviewSession(
+        session_id="s-cap",
+        candidate_id="CAND-002",
+        profile=profile,
+        plan=InterviewPlan(),
+        memory=ConversationMemory(),
+    )
+    for index in range(8):
+        day = retriever.get_day(index % 4)
+        session.plan.questions.append(
+            PlannedQuestion(
+                day_index=index % 4,
+                day_title=day.title,
+                topic=day.primary_topic,
+                question_type=QuestionType.CONCEPTUAL,
+                difficulty=Difficulty.MEDIUM,
+                question="dummy",
+            )
+        )
+        if index % 4 not in session.plan.days_covered:
+            session.plan.days_covered.append(index % 4)
+        session.plan.assessment.get_topic(day.primary_topic).questions_asked += 1
+
+    topic0 = session.plan.assessment.get_topic(retriever.get_day(0).primary_topic)
+    # 8 mains + 4 follow-ups = 12 actual questions -> ceiling fires.
+    topic0.follow_ups = 4
+    assert manager._should_terminate(session) is True
+
+    # 8 mains + 2 follow-ups = 10 actual -> soft target (10) fires.
+    topic0.follow_ups = 2
+    assert manager._should_terminate(session) is True
+
+    # 8 mains + 1 follow-up = 9 actual -> neither cap nor soft target, and
+    # no evidence is settled -> keep going.
+    topic0.follow_ups = 1
+    assert manager._should_terminate(session) is False
+
+
+# ---------------------------------------------------------------------------
+# emotional trajectory: escalating firmness + recovery acknowledgment
+# ---------------------------------------------------------------------------
+
+
+def test_memory_consecutive_weak_streak() -> None:
+    """The memory tracks the trailing streak of non-substantive answers
+    (weak / bare-claim verdicts); a good answer resets it."""
+    memory = ConversationMemory()
+
+    def add(verdict: Verdict, answer: str = "answer") -> None:
+        memory.add_turn(
+            question="q",
+            topic="RAG",
+            day_index=0,
+            question_type=QuestionType.CONCEPTUAL,
+            difficulty=Difficulty.MEDIUM,
+            answer=answer,
+            score=2 if verdict in (Verdict.WEAK, Verdict.UNCLEAR) else 8,
+            verdict=verdict,
+            follow_up=FollowUpStrategy.NEXT_TOPIC,
+        )
+
+    assert memory.consecutive_weak == 0
+    add(Verdict.WEAK, "I don't know")
+    assert memory.consecutive_weak == 1
+    add(Verdict.UNCLEAR, "I know")
+    assert memory.consecutive_weak == 2
+    # A demonstrated answer breaks the streak.
+    add(Verdict.GOOD)
+    assert memory.consecutive_weak == 0
+
+
+def test_bridge_weak_reaction_escalates_with_streak() -> None:
+    """Repeated weak answers make the interviewer's reaction progressively
+    firmer (mild -> direct -> firm), like a human interviewer who has tried
+    a concept a couple of ways."""
+    mild = _bridge(index=0, last_verdict="weak", consecutive_weak=1)
+    direct = _bridge(index=1, last_verdict="weak", consecutive_weak=2)
+    firm = _bridge(index=4, last_verdict="weak", consecutive_weak=4)
+    mild_pool = ("No worries", "That's okay", "Let's come at it another way",
+                 "Alright, let's keep it simple")
+    direct_pool = ("Alright, let's make this one easier",
+                   "Okay, let's slow down", "Let's take a step back")
+    firm_pool = ("I've tried this a couple of ways now",
+                 "Alright, let's leave that one for now",
+                 "Let's move past this one")
+    assert any(mild.startswith(w) for w in mild_pool)
+    assert any(direct.startswith(w) for w in direct_pool)
+    assert any(firm.startswith(w) for w in firm_pool)
+
+
+def test_bridge_claim_reaction_escalates() -> None:
+    """Repeated bare claims ("I know") get a firmer, more skeptical reaction
+    instead of the same neutral "Alright — " every time."""
+    first = _bridge(index=0, last_verdict="unclear", consecutive_weak=1)
+    repeated = _bridge(index=1, last_verdict="unclear", consecutive_weak=2)
+    assert any(
+        first.startswith(c) for c in ("Alright", "Fair enough", "Okay")
+    )
+    assert any(
+        repeated.startswith(c)
+        for c in ("Fair enough — but I still need the answer itself",
+                  "Alright — I can't mark that without seeing it",
+                  "Okay — then let's see it in action")
+    )
+
+
+def test_bridge_recovery_reaction() -> None:
+    """A good answer on a topic the candidate previously struggled with gets
+    an explicit recovery acknowledgment ("Much better — ")."""
+    text = _bridge(index=0, last_verdict="good", recovered=True)
+    assert any(
+        text.startswith(r)
+        for r in ("Much better", "Yes, that's closer", "Good recovery",
+                  "That's more like it")
+    )
+    # Without a prior struggle, a good answer uses the normal reaction.
+    normal = _bridge(index=0, last_verdict="good")
+    assert not any(
+        normal.startswith(r)
+        for r in ("Much better", "Yes, that's closer", "Good recovery",
+                  "That's more like it")
+    )
+
+
+def test_question_prompt_includes_full_conversation() -> None:
+    """The question generator receives the FULL conversation (earlier
+    questions AND answers), not just the last answer — it must be able to
+    remember earlier claims, mistakes and examples."""
+    from models.question_intent import QuestionIntent
+    from services.prompt_builder import PromptBuilder
+
+    prompts = PromptBuilder(settings)
+    memory = ConversationMemory()
+    memory.add_turn(
+        question="What is RAG?",
+        topic="RAG",
+        day_index=0,
+        question_type=QuestionType.CONCEPTUAL,
+        difficulty=Difficulty.MEDIUM,
+        answer="RAG retrieves documents before generation.",
+        score=8,
+        verdict=Verdict.GOOD,
+        follow_up=FollowUpStrategy.NEXT_TOPIC,
+    )
+    memory.add_turn(
+        question="How does it decide which documents are relevant?",
+        topic="RAG",
+        day_index=0,
+        question_type=QuestionType.CONCEPTUAL,
+        difficulty=Difficulty.MEDIUM,
+        answer="Using embeddings and similarity search.",
+        score=9,
+        verdict=Verdict.EXCELLENT,
+        follow_up=FollowUpStrategy.DEEPER,
+        is_follow_up=True,
+    )
+    context = ContextManager().build(
+        state=InterviewState.QUESTIONING,
+        candidate=_profile(),
+        plan=InterviewPlan(),
+        memory=memory,
+        question_index=2,
+    )
+    intent = QuestionIntent(
+        curriculum_day=1,
+        topic="RAG",
+        module="Retrieval",
+        learning_objective="Understand RAG",
+        concept="how retrieval grounds generation",
+        cognitive_level="application",
+        purpose="test_application",
+        expected_evidence=["explains retrieval"],
+        difficulty="medium",
+        relationship="continuing on the same curriculum day",
+        candidate_signal="normal coverage",
+    )
+    prompt = prompts.question_prompt(
+        context,
+        intent=intent,
+        question_type="scenario",
+        difficulty="medium",
+        curriculum="grounding text",
+        previous_topic="RAG",
+    )
+    # Both earlier answers AND questions are visible to the generator.
+    assert "RAG retrieves documents before generation." in prompt
+    assert "Using embeddings and similarity search." in prompt
+    assert "What is RAG?" in prompt
+    assert "FULL CONVERSATION SO FAR" in prompt
+
+
+@pytest.mark.asyncio
+async def test_evaluation_contradiction_probes(monkeypatch) -> None:
+    """When the LLM flags that the candidate's answer contradicts an earlier
+    statement, the evaluator turns it into a gentle probe and records the
+    contradiction in memory (so later turns can reference it)."""
+    from schemas.llm import EvaluationDraft
+
+    llm = LLMService(settings)
+    prompts = PromptBuilder(settings)
+    evaluator = ResponseEvaluator(llm, prompts)
+
+    async def fake_completion(*, system_prompt, user_prompt, schema):
+        return EvaluationDraft(
+            score=7,
+            verdict="good",
+            follow_up="deeper",
+            mastered_topic=False,
+            contradiction_detected=True,
+            notes=(
+                "Earlier the candidate said the vector database creates the "
+                "embeddings; now they say the embedding model does."
+            ),
+        )
+
+    monkeypatch.setattr(llm, "structured_completion", fake_completion)
+    plan = InterviewPlan()
+    memory = ConversationMemory()
+    context = ContextManager().build(
+        state=InterviewState.QUESTIONING,
+        candidate=_profile(),
+        plan=plan,
+        memory=memory,
+        question_index=1,
+    )
+    result = await evaluator.evaluate(
+        context,
+        _question(),
+        "The embedding model produces the vectors, then the vector database "
+        "stores them for similarity search.",
+    )
+    assert result.strategy == FollowUpStrategy.PROBE
+    assert result.wants_follow_up is True
+    assert memory.contradictions, "contradiction must be recorded in memory"
+    # The recorded note names the topic and the discrepant statements.
+    assert "Embeddings Explained" in memory.contradictions[0]
+    assert "embedding model" in memory.contradictions[0]
+
+
+def test_mock_follow_up_escalates_when_struggling() -> None:
+    """After repeated weak answers the mock follow-up stops using the gentle
+    openers and becomes direct (still never "core job of X")."""
+    from services.llm_service import MockProvider
+
+    mock = MockProvider()
+    out = mock._mock_follow_up(
+        "- Follow-up strategy: simplify\n"
+        "- Learning objective: Secure chatbot APIs against unauthorized access\n"
+        "- Technical concept: how to secure chatbot APIs against unauthorized access\n"
+        "- Follow-ups so far on this topic: 1\n"
+        "- Consecutive weak answers so far in the interview: 4\n"
+        "CANDIDATE'S ANSWER\nI don't know\n\nEVALUATION\nweak",
+        "Security",
+    )
+    assert "core job" not in out["question"].lower()
+    assert any(
+        firm in out["question"]
+        for firm in ("I've tried this a couple of ways now",
+                     "Let's make this one easier", "one last angle")
+    )
+    # A single weak answer keeps the patient opener.
+    gentle = mock._mock_follow_up(
+        "- Follow-up strategy: simplify\n"
+        "- Learning objective: Secure chatbot APIs against unauthorized access\n"
+        "- Technical concept: how to secure chatbot APIs against unauthorized access\n"
+        "- Follow-ups so far on this topic: 0\n"
+        "- Consecutive weak answers so far in the interview: 1\n"
+        "CANDIDATE'S ANSWER\nI don't know\n\nEVALUATION\nweak",
+        "Security",
+    )
+    assert not any(
+        firm in gentle["question"]
+        for firm in ("I've tried this a couple of ways now",
+                     "Let's make this one easier", "one last angle")
+    )
 
 
 def test_mock_question_occasionally_references_mentions() -> None:

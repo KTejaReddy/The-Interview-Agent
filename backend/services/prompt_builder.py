@@ -11,6 +11,7 @@ instead of substituting a topic title into a template.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from config import Settings
@@ -19,6 +20,22 @@ from models.question_intent import QuestionIntent
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+#: Phrases that never belong in an interviewer reaction, whichever path
+#: generated it.  Used to validate the LLM's reaction and fall back to the
+#: deterministic pools instead of letting a canned phrase through.
+_BANNED_REACTION = (
+    "glad to hear it",
+    "let's make sure we're on the same page",
+    "no problem — let's ground this differently",
+    "let's try a simpler angle",
+    "what's the core job",
+    "core job of",
+    "you mentioned",
+    "earlier you said",
+    "based on your previous",
+    "according to your previous",
+)
 
 #: Every template file we expect to find in the prompts directory.
 _TEMPLATES = (
@@ -115,6 +132,27 @@ class PromptBuilder:
             relationship=intent.relationship or "—",
             candidate_signal=intent.candidate_signal or "—",
             candidate_mentions=context.candidate_mentions,
+            conversation_so_far=context.transcript_excerpt,
+            consecutive_weak=context.memory.consecutive_weak,
+            interviewer_state=self._interviewer_state(context),
+        )
+
+    @staticmethod
+    def _interviewer_state(context: InterviewContext) -> str:
+        """Structured interviewer state for the question prompt: the
+        emotional state, firmness level and last-answer assessment.  The
+        LLM calibrates its reaction from this — it never quotes it to the
+        candidate."""
+        mem = context.memory
+        last = mem.last()
+        notes = last.notes.strip() if last and last.notes else "none"
+        return (
+            f"- Emotion: {mem.interviewer_emotion}\n"
+            f"- Firmness: {mem.firmness}/3 (0 calm, 1 concerned, 2 direct, 3 firm)\n"
+            f"- Last answer verdict: {last.verdict.value if last else 'none yet'}\n"
+            f"- Last answer notes: {notes}\n"
+            f"- Candidate recovered from an earlier struggle: "
+            f"{'yes' if mem.recovered else 'no'}"
         )
 
     def evaluate_prompt(
@@ -141,6 +179,7 @@ class PromptBuilder:
             answer=answer or "—",
             candidate_summary=context.candidate.summary,
             aggregate_summary=context.aggregate_summary,
+            conversation_so_far=context.transcript_excerpt,
         )
 
     def follow_up_prompt(
@@ -180,6 +219,7 @@ class PromptBuilder:
             curriculum_context=curriculum,
             difficulty=difficulty,
             follow_up_count=follow_up_count,
+            consecutive_weak=context.memory.consecutive_weak,
             previous_questions="\n".join(
                 f"- {q}" for q in previous_questions
             )
@@ -265,19 +305,46 @@ class PromptBuilder:
             if line.strip() and not line.strip().startswith("#")
         ]
 
-    def _reaction_for(self, verdict: str | None, index: int) -> str:
-        """Short human reaction to the previous answer, rotated by turn."""
+    def _reaction_for(
+        self,
+        verdict: str | None,
+        index: int,
+        *,
+        consecutive_weak: int = 0,
+        recovered: bool = False,
+    ) -> str:
+        """Short human reaction to the previous answer, rotated by turn and
+        escalated by the interview's emotional trajectory.
+
+        * a good answer on a topic the candidate previously struggled with
+          gets an explicit *recovery* acknowledgment ("Much better — "),
+        * repeated weak answers make the tone progressively firmer (mild →
+          direct → firm), exactly like a human interviewer who has tried a
+          concept a couple of ways and is about to move on,
+        * repeated bare claims ("I know") get a firmer, more skeptical
+          reaction instead of the same neutral "Alright — " every time.
+        """
         if verdict is None:
             return ""
         verdict = verdict.lower()
-        if verdict in ("good", "excellent"):
+        if recovered and verdict in ("good", "excellent"):
+            pool = self._pool("reaction_recovery")
+        elif verdict in ("good", "excellent"):
             pool = self._pool("reaction_good")
         elif verdict == "weak":
-            pool = self._pool("reaction_weak")
+            if consecutive_weak >= 3:
+                pool = self._pool("reaction_weak3")
+            elif consecutive_weak >= 2:
+                pool = self._pool("reaction_weak2")
+            else:
+                pool = self._pool("reaction_weak")
         elif verdict == "wrong":
             pool = self._pool("reaction_wrong")
         elif verdict == "unclear":
-            pool = self._pool("reaction_claim")
+            if consecutive_weak >= 2:
+                pool = self._pool("reaction_claim2")
+            else:
+                pool = self._pool("reaction_claim")
         else:
             return ""
         if not pool:
@@ -305,6 +372,37 @@ class PromptBuilder:
             return ""
         return pool[index % len(pool)]
 
+    def reaction_or_fallback(
+        self,
+        reaction: str,
+        *,
+        topic: str,
+        index: int,
+        last_verdict: str | None = None,
+        consecutive_weak: int = 0,
+        recovered: bool = False,
+    ) -> str:
+        """Validate the LLM's content-aware reaction; fall back to the
+        deterministic pool reaction when it is empty, canned, oversized or
+        leaks curriculum metadata.  The pools remain a safety net, never the
+        primary reaction mechanism."""
+        reaction = (reaction or "").strip()
+        low = reaction.lower()
+        invalid = (
+            len(reaction) > 160
+            or any(phrase in low for phrase in _BANNED_REACTION)
+            or bool(re.search(r"\bday \d+\b", low))
+            or (topic and topic.lower() in low)
+        )
+        if not reaction or invalid:
+            return self._reaction_for(
+                last_verdict,
+                index,
+                consecutive_weak=consecutive_weak,
+                recovered=recovered,
+            )
+        return reaction
+
     def next_question_bridge(
         self,
         question: str,
@@ -315,8 +413,15 @@ class PromptBuilder:
         last_verdict: str | None = None,
         related: bool = False,
         same_topic: bool = False,
+        consecutive_weak: int = 0,
+        recovered: bool = False,
     ) -> str:
-        reaction = self._reaction_for(last_verdict, index)
+        reaction = self._reaction_for(
+            last_verdict,
+            index,
+            consecutive_weak=consecutive_weak,
+            recovered=recovered,
+        )
         transition = self._transition_for(related, same_topic, index)
         parts = [part for part in (reaction, transition) if part]
         if parts and not reaction and transition:

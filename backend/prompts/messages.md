@@ -24,16 +24,45 @@ Exactly —
 That's solid — 
 Good thinking — 
 
+# Reaction when the candidate STUMBLED on this topic earlier and has now
+# given a good answer — the interviewer recognizes the recovery.
+[reaction_recovery]
+Much better — 
+Yes, that's closer — 
+Good recovery — 
+That's more like it — 
+
+# First struggle on a topic: still patient.
 [reaction_weak]
 No worries — 
 That's okay — 
 Let's come at it another way — 
 Alright, let's keep it simple — 
 
+# Second/third consecutive struggle: noticeably more direct.
+[reaction_weak2]
+Alright, let's make this one easier — 
+Okay, let's slow down — 
+Let's take a step back — 
+
+# Repeated struggles across the interview: firm, about to move on.  Never
+# insulting — just honest about the process.
+[reaction_weak3]
+I've tried this a couple of ways now — 
+Alright, let's leave that one for now — 
+Let's move past this one — 
+
 [reaction_claim]
 Alright — 
 Fair enough — 
 Okay — 
+
+# Repeated "I know" without evidence: the interviewer needs the actual
+# answer and says so plainly.
+[reaction_claim2]
+Fair enough — but I still need the answer itself — 
+Alright — I can't mark that without seeing it — 
+Okay — then let's see it in action — 
 
 [reaction_wrong]
 I see — 

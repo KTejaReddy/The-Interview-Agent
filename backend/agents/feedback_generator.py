@@ -41,7 +41,10 @@ class FeedbackGenerator:
         memory = context.memory
         raw_score = memory.average_score / 10.0  # 0..1
         coverage = min(1.0, len(memory.days_covered) / max(1, context.plan.distinct_days))
-        score = int(round((0.7 * raw_score + 0.3 * coverage) * 100))
+        # Coverage credit is gated by demonstrated quality: a candidate who
+        # demonstrated nothing gets no coverage bonus, so a 0/10 average can
+        # never produce an unexplained 30/100 — the score reflects evidence.
+        score = int(round((0.7 * raw_score + 0.3 * coverage * raw_score) * 100))
         confidence = memory.estimated_confidence
         return InternalMetrics(
             score=max(0, min(100, score)),

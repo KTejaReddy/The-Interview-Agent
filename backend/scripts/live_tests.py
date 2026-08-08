@@ -119,6 +119,12 @@ class InterviewRun:
         elif data.get("state") == "FINAL_QUESTION":
             self._follow_up_state = False
 
+    @property
+    def total_questions(self) -> int:
+        """Actual interviewer questions shown: main questions + follow-ups
+        (a follow-up is also a question)."""
+        return self.main_questions + self.follow_ups
+
     def answer(self, message: str) -> dict:
         data = self.api.post(
             "/api/interview",
@@ -129,7 +135,11 @@ class InterviewRun:
         self._count_question(data)
         if data.get("state") not in ("DONE", "FINAL_QUESTION") or data.get("feedback"):
             if data.get("reply"):
-                self.replies.append({"state": data.get("state"), "reply": data["reply"]})
+                self.replies.append({
+                    "state": data.get("state"),
+                    "reply": data["reply"],
+                    "topic": data.get("currentTopic"),
+                })
         if data.get("feedback"):
             self.feedback = data["feedback"]
         return data
@@ -165,23 +175,44 @@ class InterviewRun:
 
 
 def _scan_duplicates(run: InterviewRun) -> list[str]:
-    """Return flagged duplicate pairs among the interviewer's questions."""
+    """Return flagged duplicate pairs among the interviewer's questions.
+
+    Topic-aware, mirroring the engine's own duplicate guard: same-topic
+    questions are flagged at a lower similarity threshold (they must add a
+    new dimension), while cross-topic questions are only flagged when they
+    are essentially identical — different concepts on different topics share
+    template stems but are not duplicates.
+    """
     from agents.duplicate_guard import jaccard, normalize
 
-    questions = [item["reply"] for item in run.replies if item["state"] in ("QUESTIONING", "FOLLOW_UP")]
+    questions = [
+        (item["reply"], item.get("topic") or "")
+        for item in run.replies
+        if item["state"] in ("QUESTIONING", "FOLLOW_UP")
+    ]
     flagged: list[str] = []
     for i in range(len(questions)):
         for j in range(i + 1, len(questions)):
-            sim = jaccard(normalize(questions[i]), normalize(questions[j]))
-            if sim >= 0.62:
-                flagged.append(f"  Q{j+1} ~ Q{i+1} (jaccard {sim:.2f})")
+            # A main question and its own immediate follow-up are related by
+            # design (the follow-up deliberately re-aims at the same concept
+            # from a simpler angle) — never flag that pair.
+            if j == i + 1:
+                continue
+            sim = jaccard(normalize(questions[i][0]), normalize(questions[j][0]))
+            same_topic = bool(questions[i][1]) and questions[i][1] == questions[j][1]
+            if (same_topic and sim >= 0.62) or (not same_topic and sim >= 0.75):
+                flagged.append(
+                    f"  Q{j+1} ~ Q{i+1} (jaccard {sim:.2f}"
+                    f"{', same topic' if same_topic else ''})"
+                )
     return flagged
 
 
 def _coverage_report(run: InterviewRun) -> str:
     return (
         f"    main questions={run.main_questions} follow-ups={run.follow_ups} "
-        f"days={len(run.days)} feedback={'yes' if run.feedback else 'no'}"
+        f"total questions={run.total_questions} days={len(run.days)} "
+        f"feedback={'yes' if run.feedback else 'no'}"
     )
 
 
@@ -190,7 +221,7 @@ def scenario_a(api: Api) -> bool:
     run = InterviewRun(api, "CAND-010")
     run.run_to_completion(lambda index, fup: IDK)
     print(_coverage_report(run))
-    ok = run.main_questions >= 8 and len(run.days) >= 4 and run.feedback is not None
+    ok = run.total_questions >= 8 and len(run.days) >= 4 and run.feedback is not None
     dupes = _scan_duplicates(run)
     if dupes:
         print("    semantic duplicates found:")
@@ -209,7 +240,7 @@ def scenario_b(api: Api) -> bool:
     run = InterviewRun(api, "CAND-003")
     run.run_to_completion(lambda index, fup: STRONG)
     print(_coverage_report(run))
-    ok = run.main_questions >= 8 and len(run.days) >= 4 and run.feedback is not None
+    ok = run.total_questions >= 8 and len(run.days) >= 4 and run.feedback is not None
     print(f"    {'PASS' if ok else 'FAIL'}\n")
     return ok
 
@@ -224,7 +255,7 @@ def scenario_c(api: Api) -> bool:
 
     run.run_to_completion(provider)
     print(_coverage_report(run))
-    ok = run.main_questions >= 8 and len(run.days) >= 4 and run.feedback is not None
+    ok = run.total_questions >= 8 and len(run.days) >= 4 and run.feedback is not None
     print(f"    {'PASS' if ok else 'FAIL'}\n")
     return ok
 

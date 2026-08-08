@@ -93,6 +93,9 @@ class PlannedQuestion:
     learning_objective: str = ""  # exact objective being assessed
     concept: str = ""             # technical concept derived from the objective
     expected_evidence: list[str] = field(default_factory=list)
+    #: Content-aware reaction to the previous answer (LLM-generated; empty
+    #: means the engine uses its deterministic reaction pools).
+    reaction: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -105,6 +108,7 @@ class PlannedQuestion:
             "intent": self.intent,
             "learning_objective": self.learning_objective,
             "concept": self.concept,
+            "reaction": self.reaction,
         }
 
 

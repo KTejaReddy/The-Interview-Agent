@@ -44,6 +44,9 @@ class InterviewContext:
     @property
     def aggregate_summary(self) -> str:
         mem = self.memory
+        contradictions = (
+            "; ".join(mem.contradictions) if mem.contradictions else "none detected"
+        )
         return (
             f"Questions asked: {mem.count}\n"
             f"Topics covered: {', '.join(mem.topics_covered) or 'none yet'}\n"
@@ -51,7 +54,11 @@ class InterviewContext:
             f"({', '.join(map(str, mem.days_covered)) or 'none'})\n"
             f"Mistakes: {len(mem.mistakes)} | Strong answers: {len(mem.strong_answers)}\n"
             f"Average score: {mem.average_score:.1f}/10\n"
-            f"Concepts the candidate mentioned: {self.candidate_mentions}"
+            f"Concepts the candidate mentioned: {self.candidate_mentions}\n"
+            f"Contradictions noticed: {contradictions}\n"
+            f"Consecutive weak answers: {mem.consecutive_weak}\n"
+            f"Interviewer state: emotion={mem.interviewer_emotion}, "
+            f"firmness={mem.firmness}/3"
         )
 
 

@@ -33,7 +33,7 @@ from agents.response_evaluator import ResponseEvaluator
 from config import Settings
 from memory.context_manager import ContextManager
 from memory.conversation_memory import ConversationMemory
-from models.enums import FollowUpStrategy
+from models.enums import FollowUpStrategy, Verdict
 from models.interview_state import InterviewState
 from models.plan import PlannedQuestion
 from models.session import InterviewSession
@@ -285,39 +285,61 @@ class InterviewManager:
     def _should_terminate(self, session: InterviewSession) -> bool:
         """Evidence-based completion gate.
 
-        The hard minimums (8+ main questions AND 4+ distinct curriculum
-        days) are enforced by the engine, never by an LLM marker.  Once the
-        minimums are met the interview ends when one of:
+        The hard minimums — 8+ ACTUAL interviewer questions (main questions
+        AND follow-ups: per the interview rules a follow-up is also a
+        question) across 4+ distinct curriculum days — are enforced by the
+        engine, never by an LLM marker.  Once the minimums are met the
+        interview ends when one of:
 
-        * the soft budget (``total_questions``) is reached, or
+        * the soft budget (``total_questions``, 10 actual) is reached,
+        * the absolute ceiling (``max_questions``, 12 actual) is hit, or
         * every topic that was asked about has a *settled* assessment —
           evidence is sufficient, so a decisive interview is not extended
           artificially.
 
-        If the minimums are never met the interview keeps going until an
-        absolute safety cap, so a 13-question / 1-day interview can never
-        finish.
+        If the minimums are never met the interview keeps going until the
+        main-question safety cap (12 mains — which already spans at least
+        6 days), so an interview can never finish starved of coverage.
         """
         main_asked, days = self._coverage(session)
-        min_ok = (
-            main_asked >= self._settings.min_questions
-            and days >= self._settings.min_days
+        follow_ups_asked = sum(
+            assessment.follow_ups
+            for assessment in session.plan.assessment.topics.values()
         )
-        # Soft budget (target 8-10) then an absolute safety ceiling (max 12).
+        total_asked = main_asked + follow_ups_asked
         soft_target = self._settings.total_questions
         hard_cap = self._settings.max_questions
 
+        # Main-question safety cap: 12 mains always ends the interview
+        # (with the planner's 2-mains-per-day limit this already spans at
+        # least 6 days, so it can never end below the 4-day minimum).
         if main_asked >= hard_cap:
             logger.warning(
-                "Hard cap %d reached (main=%d days=%d) — ending interview",
+                "Hard cap %d reached (mains=%d total=%d days=%d) — ending "
+                "interview",
                 hard_cap,
                 main_asked,
+                total_asked,
                 days,
             )
             return True
-        if not min_ok:
+        if not (
+            total_asked >= self._settings.min_questions
+            and days >= self._settings.min_days
+        ):
             return False
-        if main_asked >= soft_target:
+        # The 12-question ceiling applies to ACTUAL questions shown (mains
+        # + follow-ups), so a follow-up-dense interview cannot exceed it.
+        if total_asked >= hard_cap:
+            logger.warning(
+                "Hard cap %d reached (total=%d days=%d) — ending interview",
+                hard_cap,
+                total_asked,
+                days,
+            )
+            return True
+        # Soft budget on ACTUAL questions: the usual 8-10 finish line.
+        if total_asked >= soft_target:
             return True
 
         # Evidence-based early finish: every touched topic has a *settled*
@@ -437,21 +459,45 @@ class InterviewManager:
             )
             previous_topic = previous_question.topic if previous_question else ""
             last_turn = session.memory.last()
+            # Emotional trajectory: the more consecutive weak / bare-claim
+            # answers, the firmer the interviewer's reaction; a good answer
+            # on a topic the candidate previously struggled with is a
+            # recovery the interviewer acknowledges.
+            consecutive_weak = session.memory.consecutive_weak
+            recovered = session.memory.recovered
             related = bool(
                 previous_question is not None
                 and self._retriever.are_adjacent_days(
                     previous_question.day_index, question.day_index
                 )
             )
-            text = self._prompts.next_question_bridge(
-                question.question,
-                previous_topic,
-                question.topic,
+            # The reaction is LLM-generated and content-aware (it references
+            # what the candidate actually said); the deterministic pools are
+            # only a fallback when it is empty or canned.  When a reaction
+            # exists it carries the bridge, so no deterministic transition is
+            # prepended on top of it.
+            reaction = self._prompts.reaction_or_fallback(
+                question.reaction,
+                topic=question.topic,
                 index=index,
                 last_verdict=last_turn.verdict.value if last_turn else None,
-                related=related,
-                same_topic=previous_topic == question.topic,
+                consecutive_weak=consecutive_weak,
+                recovered=recovered,
             )
+            if reaction:
+                text = f"{reaction} {question.question}"
+            else:
+                text = self._prompts.next_question_bridge(
+                    question.question,
+                    previous_topic,
+                    question.topic,
+                    index=index,
+                    last_verdict=last_turn.verdict.value if last_turn else None,
+                    related=related,
+                    same_topic=previous_topic == question.topic,
+                    consecutive_weak=consecutive_weak,
+                    recovered=recovered,
+                )
 
         self._append(session, "interviewer", text)
         await self._sessions.update(session)
@@ -469,10 +515,12 @@ class InterviewManager:
         complete: bool = False,
         feedback: dict[str, Any] | None = None,
     ) -> InterviewTurnResult:
-        total_q = max(len(session.plan.questions), self._settings.min_questions)
-        # The reported question number never exceeds the total, so the UI
-        # can never show "13 of 12".
-        question_number = min(session.current_question_index + 1, total_q)
+        # The reported question number is the ACTUAL number of interviewer
+        # questions asked so far — main questions AND follow-ups, plus the
+        # one just asked — so the counter never understates the
+        # conversation.  The total is only a floor for the progress UI.
+        question_number = session.memory.count + 1
+        total_q = max(question_number, self._settings.min_questions)
         return InterviewTurnResult(
             session_id=session.session_id,
             state=state.value,
@@ -489,15 +537,15 @@ class InterviewManager:
         feedback = (
             session.feedback.to_api_payload() if session.feedback else None
         )
-        main_asked, days = self._coverage(session)
-        total_q = max(main_asked, self._settings.min_questions)
+        # Actual interviewer questions asked: mains + follow-ups (the
+        # closing "any questions" turn is conversational, not scored).
+        questions_asked = session.memory.count
+        total_q = max(questions_asked, self._settings.min_questions)
         return InterviewTurnResult(
             session_id=session.session_id,
             state=InterviewState.DONE.value,
             message=self._prompts.wrap_up_message(session.profile.name),
-            # The final response reports the *actual* number of questions
-            # asked — never main_asked + 1 (which produced "13 of 12").
-            question_number=main_asked,
+            question_number=questions_asked,
             total_questions=total_q,
             current_day=None,
             current_topic=None,

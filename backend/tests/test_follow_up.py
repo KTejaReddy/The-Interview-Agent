@@ -167,7 +167,9 @@ async def test_follow_up_branch() -> None:
     # Turn 3: answer the follow-up → evaluator returns "next_topic" → Q2.
     r2 = await manager.handle_message(session, "I'd verify invariants and write unit tests.")
     assert r2.state == "QUESTIONING"
-    assert r2.question_number == 2
+    # Follow-ups count as questions: Q1, the follow-up, then Q2 is the
+    # interviewer's THIRD actual question.
+    assert r2.question_number == 3
 
     # Verify conversation memory.
     # Turn 0: answer to the base question (not a follow-up).

@@ -29,6 +29,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
 from agents.interview_manager import InterviewManager
+from config import settings as app_settings
 from schemas.api import (
     CandidateSummary,
     HealthResponse,
@@ -188,12 +189,16 @@ async def get_session(session_id: str, request: Request) -> SessionSnapshot:
     services = _services(request)
     sessions: SessionManager = services["sessions"]
     session = await sessions.get(session_id)
+    # The snapshot reports ACTUAL interviewer questions (mains + follow-ups
+    # + the one just asked), matching the live turn responses — a follow-up
+    # is also a question, so the count never understates the conversation.
+    question_number = session.memory.count + 1
     return SessionSnapshot(
         sessionId=session.session_id,
         candidateId=session.candidate_id,
         state=session.state.value,
-        questionNumber=session.current_question_index + 1,
-        totalQuestions=len(session.plan.questions),
+        questionNumber=question_number,
+        totalQuestions=max(question_number, app_settings.min_questions),
         interviewComplete=session.completed,
         messages=list(session.transcript),
         feedback=session.feedback.to_api_payload() if session.feedback else None,

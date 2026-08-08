@@ -319,8 +319,13 @@ class MockProvider(LLMProvider):
             f"Review the curriculum material and exercises for {t}"
             for t in (weak_topics[:2] or strong_topics[:1] or ["the topics covered"])
         ]
+        # Score is gated by demonstrated evidence: raw quality dominates and
+        # the coverage bonus only helps proportionally to quality, so a 0/10
+        # average can never produce an unexplained 30/100.
+        raw = avg / 10.0
+        cov = min(1.0, covered / 5.0)
         score = int(
-            round(min(100.0, max(0.0, avg * 8.0 + min(20.0, covered * 2.5))))
+            round(min(100.0, max(0.0, (0.7 * raw + 0.3 * cov * raw) * 100)))
         )
         summary = (
             f"The interview covered {covered} curriculum topics with an average "
@@ -349,6 +354,60 @@ class MockProvider(LLMProvider):
             re.DOTALL,
         )
         return match.group(1).strip() if match else ""
+
+    def _mock_reaction(self, user: str, n: int) -> str:
+        """Deterministic stand-in for the real LLM's content-aware reaction.
+        Substantive previous answers get a short acknowledgment seeded by the
+        answer's own content (so different answers read differently);
+        non-answers escalate with firmness exactly like the real path."""
+        from utils.answer_signals import (
+            detects_claim_without_evidence,
+            detects_greeting,
+            detects_idk,
+        )
+
+        prev = ""
+        match = re.search(
+            r"CANDIDATE'S PREVIOUS ANSWER\n(.*?)\n\n"
+            r"(?:PREVIOUS QUESTIONS ASKED|QUESTION INTENT)",
+            user,
+            re.DOTALL,
+        )
+        if match:
+            prev = match.group(1).strip()
+        weak_match = re.search(r"- Consecutive weak answers so far: (\d+)", user)
+        consecutive_weak = int(weak_match.group(1)) if weak_match else 0
+
+        non_substantive = (
+            not prev
+            or prev == "none yet"
+            or detects_idk(prev)
+            or detects_greeting(prev)
+            or detects_claim_without_evidence(prev)
+            or len(prev) < 40
+        )
+        if non_substantive:
+            # Escalating tone, mirroring the human firmness ladder.
+            if consecutive_weak >= 3:
+                pool = ("I've tried this a couple of ways now. ",
+                        "Alright, let's leave this one for now. ")
+            elif consecutive_weak >= 2:
+                pool = ("Alright, let's make this one easier. ",
+                        "Okay, let's slow down. ")
+            else:
+                pool = ("No worries. ", "That's okay. ")
+            return pool[n % len(pool)]
+        pool = ("That's a useful angle. ",
+                "Good — that's the part I wanted to hear. ",
+                "Right, that's the key distinction. ",
+                "Yeah — that's solid. ",
+                "Nice — that's the piece I was after. ",
+                "Exactly. That's the angle. ")
+        # Weighted content hash: different answers (different words AND
+        # positions) map to different acknowledgements, so consecutive
+        # questions never repeat the same opener in a mock transcript.
+        seed = sum(ord(ch) * (i + 1) for i, ch in enumerate(prev))
+        return pool[(seed + n) % len(pool)]
 
     def _mock_question(self, user: str, topic: str) -> dict[str, Any]:
         """Concept-grounded question text for each cognitive task.  The
@@ -446,6 +505,7 @@ class MockProvider(LLMProvider):
 
         return {
             "question": f"{mention_prefix}{question}",
+            "reaction": self._mock_reaction(user, n),
             "topic": topic,
             "intent": f"Assess the learning objective behind '{concept}'.",
             "question_type": qtype,
@@ -477,6 +537,13 @@ class MockProvider(LLMProvider):
         # Follow-ups so far on this topic drive the cognitive escalation.
         count_match = re.search(r"- Follow-ups so far on this topic: (\d+)", user)
         count = int(count_match.group(1)) if count_match else 0
+        # Consecutive weak answers across the WHOLE interview drive the tone:
+        # after repeated struggles the interviewer becomes direct, not
+        # endlessly patient (never insulting, just honest about the process).
+        weak_match = re.search(
+            r"- Consecutive weak answers so far in the interview: (\d+)", user
+        )
+        consecutive_weak = int(weak_match.group(1)) if weak_match else 0
 
         # Rotation seed derived from the concept itself, so consecutive
         # topics open with DIFFERENT phrasings (the per-topic count is 0 for
@@ -510,8 +577,35 @@ class MockProvider(LLMProvider):
             ),
             "probe": ("", ""),
         }
-        pool = openers.get(strategy, openers["deeper"])
-        opener = pool[(seed + count) % len(pool)]
+        # Escalating firmness: after repeated non-answers the gentle openers
+        # give way to direct ones (a second bare claim gets "but I need the
+        # actual explanation", a long struggle gets "I've tried this a couple
+        # of ways now").
+        if strategy == "verify" and consecutive_weak >= 2:
+            pool = (
+                "Right, but I need the actual explanation. ",
+                "Alright, I can't take that at face value — ",
+                "Okay — then let's see it in action. ",
+            )
+            # The growing streak rotates the opener, so a long all-"I don't
+            # know" run never repeats the same firm phrase back-to-back.
+            opener = pool[(seed + count + consecutive_weak) % len(pool)]
+        elif strategy in ("simplify", "recovery") and consecutive_weak >= 3:
+            pool = {
+                "simplify": (
+                    "Alright, I've tried this a couple of ways now. ",
+                    "Let's make this one easier — ",
+                    "Okay, one last angle: ",
+                ),
+                "recovery": (
+                    "Let's step back one more time. ",
+                    "Okay, let's reset: ",
+                ),
+            }[strategy]
+            opener = pool[(seed + count + consecutive_weak) % len(pool)]
+        else:
+            pool = openers.get(strategy, openers["deeper"])
+            opener = pool[(seed + count) % len(pool)]
 
         # Escalating ladder for strong answers (never repeats an angle).
         deeper_ladder = (

@@ -21,9 +21,20 @@ CANDIDATE PROFILE
 CONVERSATION SO FAR
 {aggregate_summary}
 
+FULL TRANSCRIPT (every earlier question and answer)
+{conversation_so_far}
+
 BEHAVIOUR
 - Judge the SUBSTANCE of the answer: correctness, completeness and relevance
   to the concept above. Do not judge by tone or length alone.
+- Read the FULL TRANSCRIPT before judging. If the candidate's current answer
+  contradicts something they said earlier in this interview (two claims that
+  cannot both be true — e.g. earlier "the vector database creates the
+  embeddings", now "the embedding model creates the embeddings"), set
+  ``contradiction_detected`` to true and put the earlier statement in your
+  notes so the interviewer can gently point out the discrepancy and ask
+  which they meant. Do NOT flag a mere elaboration or a recovery from an
+  earlier mistake as a contradiction.
 - A greeting ("hello", "hi") or filler ("okay", "hmm") is a non-substantive
   response: verdict "weak", follow_up "simplify" — one short, simpler
   recovery question is enough.
@@ -49,4 +60,5 @@ Respond with a JSON object only:
 {{"score": <0-10>, "verdict": "excellent|good|weak|wrong|unclear",
   "follow_up": "deeper|simplify|recovery|verify|next_topic|probe",
   "mastered_topic": true|false,
+  "contradiction_detected": true|false,
   "notes": "<short private rationale, 1 sentence>"}}

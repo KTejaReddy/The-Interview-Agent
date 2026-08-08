@@ -133,6 +133,7 @@ class ResponseEvaluator:
         # --- deterministic signal overrides -------------------------------
         # These are the hard rules: surface phrases never decide competence.
         claim = False
+        contradiction = False
         if detects_idk(answer):
             score = min(score, 3)
             verdict = Verdict.WEAK if verdict not in (Verdict.WRONG,) else Verdict.WRONG
@@ -163,6 +164,18 @@ class ResponseEvaluator:
                 "The candidate asserted knowledge without demonstrating it — "
                 "verify with a concrete scenario from the learning objective."
             )
+        elif draft.contradiction_detected:
+            # The answer contradicts an earlier statement of the candidate's
+            # (the LLM compared it against the full transcript).  Gently
+            # point out the discrepancy instead of scoring it as plain
+            # competence or failure: the next turn probes which they meant.
+            contradiction = True
+            strategy = FollowUpStrategy.PROBE
+            notes = (
+                draft.notes
+                or "The candidate contradicted an earlier statement in the interview."
+            )
+            context.memory.add_contradiction(f"{question.topic}: {notes}")
         elif any(pattern.match(answer) for pattern in _WEAK_ANSWER_PATTERNS):
             score = min(score, 3)
             verdict = Verdict.WEAK
@@ -222,6 +235,11 @@ class ResponseEvaluator:
                     topic_assessment.confidence = "high"
         # Verdict.UNCLEAR (bare claim): no confidence change; the claim is
         # neither a mistake nor evidence.
+
+        # A contradiction always stays a gentle call-out (the failure ladder
+        # or claim logic above must never turn it into a silent move-on).
+        if contradiction:
+            strategy = FollowUpStrategy.PROBE
 
         return EvaluationResult(
             score=score,
