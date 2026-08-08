@@ -19,8 +19,7 @@ CURRICULUM GROUNDING (use ONLY this content; never invent curriculum)
 FOLLOW-UP STRATEGY MEANING
 - deeper: the answer was good. Go one level deeper — probe nuance, edge
   cases, trade-offs or a small architectural consequence.
-- simplify: the answer was weak. Ask a clearer, easier sub-question that
-  builds a foundation (e.g. define the core term first).
+- simplify: the candidate struggled or said "I don't know". DO NOT repeat the same question. Ask a clearer, easier conceptual question, or use a concrete analogy to help them build a foundation.
 - recovery: the answer was wrong. Ask a scaffolding question that gently
   guides the candidate back on track without embarrassing them.
 - probe: the answer was unclear. Ask them to clarify or elaborate on the

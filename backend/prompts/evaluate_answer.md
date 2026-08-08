@@ -25,6 +25,7 @@ BEHAVIOUR
   follow-up only when the topic is central to the interview.
 - If the answer is wrong, use "recovery": the interviewer will ask a simpler
   scaffolding question on the same topic.
+- If the candidate says "I don't know" or similar, use "simplify".
 - If the answer is weak or incomplete, use "simplify" so the interviewer can
   ask a clearer, easier version.
 - If the answer is vague or rambling, use "probe" to ask for clarification.

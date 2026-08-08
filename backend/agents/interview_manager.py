@@ -160,20 +160,12 @@ class InterviewManager:
     async def _begin(self, session: InterviewSession, message: str) -> InterviewTurnResult:
         session.state_machine.transition(InterviewState.INTRODUCTION)
 
-        # A substantive first message skips the separate intro step.
-        if len(message.strip()) >= _INTRO_LENGTH_THRESHOLD:
-            return await self._after_intro(session, skipped_intro=True)
-
-        text = self._prompts.intro_message(session.profile.name)
-        self._append(session, "interviewer", text)
-        await self._sessions.update(session)
-        return self._result(session, InterviewState.INTRODUCTION, text)
+        # Skip generic introduction to immediately dive into contextual technical question
+        return await self._after_intro(session, skipped_intro=True)
 
     async def _after_intro(self, session: InterviewSession, skipped_intro: bool = False) -> InterviewTurnResult:
         session.state_machine.transition(InterviewState.QUESTIONING)
-        # When the candidate never formally introduced themselves, use the
-        # plain question bridge instead of the "Great, thanks {name}!" line.
-        return await self._ask_question(session, 0, first=not skipped_intro)
+        return await self._ask_question(session, 0, first=True)
 
     async def _handle_answer(
         self, session: InterviewSession, message: str
@@ -250,21 +242,31 @@ class InterviewManager:
         )
 
     async def _advance(self, session: InterviewSession) -> InterviewTurnResult:
-        """Move to the next planned question or to the final question."""
+        """Move to the next dynamically planned question or to the final question."""
         machine = session.state_machine
-        next_index = session.current_question_index + 1
+        
+        # We need at least 8 questions and 4 days. Let's aim for 10 if we can.
+        questions_asked = session.plan.size
+        days_covered = session.plan.distinct_days
+        
+        should_terminate = False
+        if questions_asked >= 12:
+            should_terminate = True
+        elif questions_asked >= 8 and days_covered >= 4:
+            # Random chance to stop between 8 and 12, or just stop
+            should_terminate = True
+            
+        if should_terminate:
+            machine.transition(InterviewState.NEXT_TOPIC)
+            machine.transition(InterviewState.FINAL_QUESTION)
+            text = self._prompts.final_question_message()
+            self._append(session, "interviewer", text)
+            await self._sessions.update(session)
+            return self._result(session, InterviewState.FINAL_QUESTION, text)
 
         machine.transition(InterviewState.NEXT_TOPIC)
-        if next_index < session.plan.size:
-            session.current_question_index = next_index
-            machine.transition(InterviewState.QUESTIONING)
-            return await self._ask_question(session, next_index, first=False)
-
-        machine.transition(InterviewState.FINAL_QUESTION)
-        text = self._prompts.final_question_message()
-        self._append(session, "interviewer", text)
-        await self._sessions.update(session)
-        return self._result(session, InterviewState.FINAL_QUESTION, text)
+        machine.transition(InterviewState.QUESTIONING)
+        return await self._ask_question(session, questions_asked, first=False)
 
     async def _finalize(self, session: InterviewSession) -> InterviewTurnResult:
         """Candidate replied to the final question -> feedback -> DONE."""
@@ -296,23 +298,23 @@ class InterviewManager:
         *,
         first: bool,
     ) -> InterviewTurnResult:
-        question = session.plan.question_at(index)
-        if question is None:
-            return await self._finalize(session)
-
-        if not question.question:
-            context = self._context.build(
-                state=InterviewState.QUESTIONING,
-                candidate=session.profile,
-                plan=session.plan,
-                memory=session.memory,
-                question_index=index,
-            )
-            curriculum = self._retriever.ground_context(question.day_index)
-            await self._planner.generate_question_text(
-                context, question, index, session.plan.size, curriculum
-            )
-
+        
+        context = self._context.build(
+            state=InterviewState.QUESTIONING,
+            candidate=session.profile,
+            plan=session.plan,
+            memory=session.memory,
+            question_index=index,
+        )
+        
+        question = await self._planner.generate_next_question(
+            context, session.profile, session.plan, index
+        )
+        
+        session.plan.questions.append(question)
+        if question.day_index not in session.plan.days_covered:
+            session.plan.days_covered.append(question.day_index)
+            
         session.current_question_index = index
         session.current_question_text = question.question
         session.current_difficulty = question.difficulty
@@ -323,7 +325,10 @@ class InterviewManager:
                 session.profile.name, question.question
             )
         else:
-            text = self._prompts.next_question_bridge(question.question)
+            previous_topic = session.plan.questions[-2].topic if len(session.plan.questions) > 1 else "Unknown"
+            # We must pass kwargs if the PromptBuilder supports it, but PromptBuilder in `_prompts.next_question_bridge` currently only takes 1 argument.
+            # I will need to modify `PromptBuilder` to pass `previous_topic` and `next_topic`.
+            text = self._prompts.next_question_bridge(question.question, previous_topic, question.topic)
 
         self._append(session, "interviewer", text)
         await self._sessions.update(session)
@@ -341,12 +346,16 @@ class InterviewManager:
         complete: bool = False,
         feedback: dict[str, Any] | None = None,
     ) -> InterviewTurnResult:
+        # Avoid showing "Day X" since we are not going linearly day-by-day necessarily. 
+        # But for UI to work we pass it back.
+        total_q = max(session.plan.size, 8) 
+        
         return InterviewTurnResult(
             session_id=session.session_id,
             state=state.value,
             message=text,
             question_number=session.current_question_index + 1,
-            total_questions=session.plan.size,
+            total_questions=total_q,
             current_day=question.day_title if question else None,
             current_topic=question.topic if question else None,
             interview_complete=complete,
@@ -357,12 +366,13 @@ class InterviewManager:
         feedback = (
             session.feedback.to_api_payload() if session.feedback else None
         )
+        total_q = max(session.plan.size, 8)
         return InterviewTurnResult(
             session_id=session.session_id,
             state=InterviewState.DONE.value,
             message=self._prompts.wrap_up_message(session.profile.name),
             question_number=session.current_question_index + 1,
-            total_questions=session.plan.size,
+            total_questions=total_q,
             current_day=None,
             current_topic=None,
             interview_complete=True,

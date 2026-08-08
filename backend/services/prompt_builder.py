@@ -69,6 +69,7 @@ class PromptBuilder:
             question_number=context.current_question_index + 1,
             total_questions=context.plan.size,
             topics_covered=", ".join(context.memory.topics_covered) or "none yet",
+            previous_questions="\n".join(f"- {turn.question}" for turn in context.memory.all_turns) or "none yet",
         )
 
     def evaluate_prompt(
@@ -120,10 +121,18 @@ class PromptBuilder:
         )
 
     def feedback_prompt(self, context: InterviewContext) -> str:
+        # Create a formatted assessment string
+        assessment_lines = []
+        for topic, state in context.plan.assessment.topics.items():
+            if state.confidence != "unknown":
+                assessment_lines.append(f"- {topic}: confidence {state.confidence}")
+        assessment_str = "\n".join(assessment_lines) if assessment_lines else "No specific topic assessments available."
+
         return self._templates["generate_feedback"].format(
             transcript=context.transcript_excerpt,
             candidate_summary=context.candidate.summary,
             aggregate_summary=context.aggregate_summary,
+            assessment_state=assessment_str,
         )
 
     # --- deterministic messages (no LLM) ----------------------------------
@@ -140,7 +149,7 @@ class PromptBuilder:
             first_name=first_name, question=question
         )
 
-    def next_question_bridge(self, question: str) -> str:
+    def next_question_bridge(self, question: str, previous_topic: str = "", next_topic: str = "") -> str:
         return self._messages["next_question_bridge"].format(question=question)
 
     def final_question_message(self) -> str:

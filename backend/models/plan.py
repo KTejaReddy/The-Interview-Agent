@@ -1,15 +1,32 @@
 """Interview plan and planned questions.
 
-The Question Planner produces the full plan before any question is asked:
-at least ``min_questions`` questions spread across at least ``min_days``
-curriculum days, with progressively increasing difficulty and a rotating
-set of question styles.
+The Question Planner produces the plan dynamically.
+The plan stores the history of questions asked and the internal assessment state.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
 from models.enums import Difficulty, QuestionType
+
+
+@dataclass
+class TopicAssessment:
+    """Internal assessment of a candidate's knowledge on a specific topic."""
+    confidence: str = "unknown" # "low", "medium", "high", "unknown"
+    consecutive_failures: int = 0
+    evidence: list[str] = field(default_factory=list)
+
+
+@dataclass
+class AssessmentState:
+    """Internal state tracking the candidate's evolving assessment."""
+    topics: dict[str, TopicAssessment] = field(default_factory=dict)
+    
+    def get_topic(self, topic: str) -> TopicAssessment:
+        if topic not in self.topics:
+            self.topics[topic] = TopicAssessment()
+        return self.topics[topic]
 
 
 @dataclass
@@ -38,10 +55,11 @@ class PlannedQuestion:
 
 @dataclass
 class InterviewPlan:
-    """The complete ordered question plan for a session."""
+    """The history of questions asked and candidate assessment."""
 
     questions: list[PlannedQuestion] = field(default_factory=list)
     days_covered: list[int] = field(default_factory=list)
+    assessment: AssessmentState = field(default_factory=AssessmentState)
 
     @property
     def size(self) -> int:

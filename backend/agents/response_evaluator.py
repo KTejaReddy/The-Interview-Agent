@@ -80,10 +80,32 @@ class ResponseEvaluator:
             user_prompt=prompt,
             schema=EvaluationDraft,
         )
+        
+        verdict = _VERDICT_MAP.get(draft.verdict, Verdict.UNCLEAR)
+        strategy = _STRATEGY_MAP.get(draft.follow_up, FollowUpStrategy.NEXT_TOPIC)
+        
+        # Update AssessmentState
+        topic_assessment = context.plan.assessment.get_topic(question.topic)
+        
+        if verdict in (Verdict.WRONG, Verdict.WEAK):
+            topic_assessment.consecutive_failures += 1
+            if topic_assessment.consecutive_failures >= 2:
+                topic_assessment.confidence = "low"
+        else:
+            topic_assessment.consecutive_failures = 0
+            if draft.mastered_topic or verdict == Verdict.EXCELLENT:
+                topic_assessment.confidence = "high"
+            elif verdict == Verdict.GOOD:
+                topic_assessment.confidence = "medium"
+
+        # Problem 4: Handle repeated failures intelligently
+        if topic_assessment.consecutive_failures >= 2:
+            strategy = FollowUpStrategy.NEXT_TOPIC
+            
         return EvaluationResult(
             score=draft.score,
-            verdict=_VERDICT_MAP.get(draft.verdict, Verdict.UNCLEAR),
-            strategy=_STRATEGY_MAP.get(draft.follow_up, FollowUpStrategy.NEXT_TOPIC),
+            verdict=verdict,
+            strategy=strategy,
             mastered_topic=draft.mastered_topic,
             notes=draft.notes,
         )

@@ -10,8 +10,11 @@ CANDIDATE PROFILE
 AGGREGATE STATS
 {aggregate_summary}
 
+ASSESSMENT STATE
+{assessment_state}
+
 RULES
-- Be specific and concrete. Reference actual topics and answers.
+- Be specific and concrete. Reference actual topics and answers. Evidence must be derived from the interview, not just the profile.
 - "strengths" (2-4 items): what the candidate did well, with evidence.
 - "gaps" (2-4 items): the weakest areas shown during the interview.
 - "next" (2-4 items): concrete, actionable suggestions to study next,
