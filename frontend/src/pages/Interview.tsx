@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { Brand } from "../components/Brand";
 import { ChatMessage } from "../components/ChatMessage";
+import { CoverageTracker } from "../components/CoverageTracker";
 import { DayBadge } from "../components/DayBadge";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { LoadingOverlay } from "../components/LoadingOverlay";
@@ -10,7 +12,6 @@ import { TypingIndicator } from "../components/TypingIndicator";
 import { useInterview } from "../context/InterviewContext";
 import { useAutoScroll } from "../hooks/useAutoScroll";
 import type { Page } from "../types";
-import { Brand } from "../components/Brand";
 
 interface InterviewProps {
   onNavigate: (page: Page) => void;
@@ -25,6 +26,7 @@ export function Interview({ onNavigate }: InterviewProps) {
     totalQuestions,
     currentDay,
     currentTopic,
+    daysCovered,
     interviewerTyping,
     interviewComplete,
     loading,
@@ -91,28 +93,39 @@ export function Interview({ onNavigate }: InterviewProps) {
         </div>
       </header>
 
-      {/* Transcript */}
+      {/* Transcript + coverage sidebar */}
       <main ref={transcriptRef} className="flex-1 overflow-y-auto scroll-smooth">
-        <div className="mx-auto flex max-w-3xl flex-col gap-5 px-6 py-8">
-          {error && (
-            <div className="sticky top-2 z-10">
-              <ErrorBanner message={error} onDismiss={dismissError} />
-            </div>
-          )}
+        <div className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-8 lg:flex-row lg:items-start">
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
+            {error && (
+              <div className="sticky top-2 z-10">
+                <ErrorBanner message={error} onDismiss={dismissError} />
+              </div>
+            )}
 
-          {messages.length === 0 && !interviewerTyping ? (
-            <EmptyState />
-          ) : (
-            messages.map((message, index) => (
-              <ChatMessage
-                key={message.id}
-                message={message}
-                isLast={index === messages.length - 1}
+            {messages.length === 0 && !interviewerTyping ? (
+              <EmptyState />
+            ) : (
+              messages.map((message, index) => (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  isLast={index === messages.length - 1}
+                />
+              ))
+            )}
+
+            {interviewerTyping && <TypingIndicator />}
+          </div>
+
+          <aside className="hidden w-60 shrink-0 lg:block">
+            <div className="sticky top-8">
+              <CoverageTracker
+                daysCovered={daysCovered}
+                totalQuestions={questionNumber}
               />
-            ))
-          )}
-
-          {interviewerTyping && <TypingIndicator />}
+            </div>
+          </aside>
         </div>
       </main>
 
@@ -120,7 +133,7 @@ export function Interview({ onNavigate }: InterviewProps) {
       <footer className="border-t border-base-800 bg-base-900/80 backdrop-blur">
         <div className="mx-auto max-w-3xl px-6 py-4">
           {currentDay && (
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 flex items-center justify-between gap-3">
               <DayBadge day={currentDay} topic={currentTopic} />
               {interviewComplete && (
                 <span className="text-xs font-medium text-mint-400 animate-fade-in">
@@ -129,6 +142,9 @@ export function Interview({ onNavigate }: InterviewProps) {
               )}
             </div>
           )}
+          <div className="mb-3 lg:hidden">
+            <CoverageTracker daysCovered={daysCovered} totalQuestions={questionNumber} />
+          </div>
           <form onSubmit={handleSubmit} className="flex items-center gap-3">
             <input
               ref={inputRef}

@@ -31,6 +31,7 @@ _STRATEGY_DIFFICULTY: dict[FollowUpStrategy, Difficulty] = {
     FollowUpStrategy.DEEPER: Difficulty.ADVANCED,
     FollowUpStrategy.SIMPLIFY: Difficulty.EASY,
     FollowUpStrategy.RECOVERY: Difficulty.EASY,
+    FollowUpStrategy.VERIFY: Difficulty.MEDIUM,
     FollowUpStrategy.PROBE: Difficulty.MEDIUM,
     FollowUpStrategy.NEXT_TOPIC: Difficulty.MEDIUM,
 }
@@ -45,22 +46,33 @@ class DifficultyManager:
     def baseline_for(self, profile: CandidateProfile) -> Difficulty:
         """Base difficulty for a candidate profile.
 
-        Starts from the seniority mapping, then lowers one step when the
-        historical pass rate is low (many failed attempts) and raises one
-        step when first-try successes dominate.
+        Starts from the seniority mapping, then:
+
+        * lowers one step when the historical pass rate is low (many
+          failed attempts),
+        * raises one step when first-try successes dominate,
+        * nudges up for very high cohort engagement and down for very low
+          engagement.
         """
         difficulty = _SENIORITY_BASELINE.get(
             profile.seniority, Difficulty.MEDIUM
         )
-        if profile.total_attempts > 0:
-            passed = sum(signal.passed for signal in profile.topic_signals)
-            pass_rate = passed / profile.total_attempts
+        # Pass rate is computed over *attempted* missions only: skipped
+        # missions carry no attempt evidence and must not penalise the
+        # candidate's difficulty.
+        attempted = [s for s in profile.topic_signals if s.attempts > 0]
+        total_attempts = sum(s.attempts for s in attempted)
+        if total_attempts > 0:
+            passed = sum(s.passed for s in attempted)
+            pass_rate = passed / total_attempts
             if pass_rate < 0.4:
-                # Many attempts / frequent failures -> conceptual basics.
                 difficulty = Difficulty.from_rank(difficulty.rank - 1)
             elif pass_rate > 0.8:
-                # First-try success rate high -> can handle harder questions.
                 difficulty = Difficulty.from_rank(difficulty.rank + 1)
+        if profile.engagement_score >= 80:
+            difficulty = Difficulty.from_rank(difficulty.rank + 1)
+        elif profile.engagement_score <= 30:
+            difficulty = Difficulty.from_rank(difficulty.rank - 1)
         return difficulty
 
     def question_difficulty(

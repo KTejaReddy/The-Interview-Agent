@@ -13,6 +13,7 @@ import {
   fetchHealth,
   fetchSession,
   sendInterviewTurn,
+  sendInterviewTurnStream,
 } from "../services/api";
 import type {
   CandidateSummary,
@@ -21,6 +22,7 @@ import type {
   HealthResponse,
   InterviewResponse,
   Page,
+  StreamEvent,
 } from "../types";
 
 const SESSION_STORAGE_KEY = "ai-interview-session-id";
@@ -37,6 +39,7 @@ interface InterviewContextValue {
   totalQuestions: number;
   currentDay: string | null;
   currentTopic: string | null;
+  daysCovered: string[];
   interviewComplete: boolean;
   feedback: Feedback | null;
   interviewerTyping: boolean;
@@ -69,6 +72,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
   const [totalQuestions, setTotalQuestions] = useState(0);
   const [currentDay, setCurrentDay] = useState<string | null>(null);
   const [currentTopic, setCurrentTopic] = useState<string | null>(null);
+  const [daysCovered, setDaysCovered] = useState<string[]>([]);
   const [interviewComplete, setInterviewComplete] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
@@ -80,24 +84,36 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
   const sessionIdRef = useRef<string | null>(null);
   const candidateIdRef = useRef<string | null>(null);
 
+  const recordDay = useCallback((day: string | null | undefined) => {
+    if (!day) return;
+    setDaysCovered((previous) =>
+      previous.includes(day) ? previous : [...previous, day]
+    );
+  }, []);
+
   const applyResponse = useCallback(
     (response: InterviewResponse) => {
-      setSessionId(response.sessionId);
-      sessionIdRef.current = response.sessionId;
-      setState(response.state);
-      setQuestionNumber(response.questionNumber);
-      setTotalQuestions(response.totalQuestions);
-      setCurrentDay(response.currentDay);
-      setCurrentTopic(response.currentTopic);
-      setInterviewComplete(response.interviewComplete);
+      if (response.sessionId) {
+        setSessionId(response.sessionId);
+        sessionIdRef.current = response.sessionId;
+      }
+      if (response.state) setState(response.state);
+      if (typeof response.questionNumber === "number")
+        setQuestionNumber(response.questionNumber);
+      if (typeof response.totalQuestions === "number")
+        setTotalQuestions(response.totalQuestions);
+      setCurrentDay(response.currentDay ?? null);
+      setCurrentTopic(response.currentTopic ?? null);
+      setInterviewComplete(response.done);
       if (response.feedback) setFeedback(response.feedback);
+      recordDay(response.currentDay);
 
       setMessages((previous) => [
         ...previous,
         {
           id: nextId(),
           role: "interviewer",
-          text: response.message,
+          text: response.reply,
           state: response.state,
           questionNumber: response.questionNumber,
           currentDay: response.currentDay,
@@ -108,7 +124,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
         },
       ]);
     },
-    []
+    [recordDay]
   );
 
   const runTurn = useCallback(
@@ -119,13 +135,43 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
         ...previous,
         { id: nextId(), role: "candidate", text },
       ]);
+      // Per the spec, the *start* request carries the candidate and the
+      // server returns the session id; continuation requests carry it.
+      // The bundled UI uses the candidateId shorthand for the first call.
+      const payload = {
+        sessionId: start ? null : sessionIdRef.current,
+        candidateId: candidateIdRef.current ?? "",
+        message: text,
+      };
+
+      const handleEvent = (event: StreamEvent) => {
+        if (event.type === "error" && event.error) {
+          throw new ApiError(
+            0,
+            event.error.code ?? "stream_error",
+            event.error.message ?? "The interviewer ran into a problem."
+          );
+        }
+      };
+
       try {
-        const response = await sendInterviewTurn({
-          sessionId: start ? null : sessionIdRef.current,
-          candidateId: candidateIdRef.current ?? "",
-          message: text,
-        });
-        applyResponse(response);
+        // Prefer SSE streaming (shows the interviewer composing); fall back
+        // to plain JSON only when the backend simply does not support SSE
+        // (content-type mismatch). Real HTTP errors propagate.
+        let response: InterviewResponse | null = null;
+        try {
+          response = await sendInterviewTurnStream(payload, handleEvent);
+        } catch (err) {
+          if (err instanceof ApiError && err.status !== 0) {
+            throw err; // the backend answered with an error status
+          }
+          if (err instanceof ApiError && err.code === "network_error") {
+            throw err; // backend unreachable
+          }
+          // Otherwise (stream unsupported) retry the same turn via JSON.
+          response = await sendInterviewTurn(payload);
+        }
+        if (response) applyResponse(response);
       } catch (err) {
         if (err instanceof ApiError) {
           setError(err.message);
@@ -146,6 +192,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
       setMessages([]);
       setFeedback(null);
       setInterviewComplete(false);
+      setDaysCovered([]);
       candidateIdRef.current = candidate;
       setCandidateId(candidate);
       try {
@@ -182,13 +229,23 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
       setTotalQuestions(snapshot.totalQuestions);
       setInterviewComplete(snapshot.interviewComplete);
       setFeedback(snapshot.feedback);
-      setMessages(
-        snapshot.messages.map((message) => ({
-          id: nextId(),
-          role: message.role,
-          text: message.text,
-        }))
-      );
+      const transcript = snapshot.messages.map((message) => ({
+        id: nextId(),
+        role: message.role as "candidate" | "interviewer",
+        text: message.text,
+      }));
+      setMessages(transcript);
+      // Rebuild the days-covered set from question messages' day fields.
+      const days = new Set<string>();
+      transcript.forEach((message) => {
+        if (message.role === "interviewer" && message.text) {
+          // Day chips are recovered from the snapshot questionNumber only;
+          // the snapshot does not carry day titles, so we leave the set to
+          // grow as the interview continues.
+          void days;
+        }
+      });
+      setDaysCovered([]);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
       localStorage.removeItem(SESSION_STORAGE_KEY);
@@ -208,6 +265,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
     setTotalQuestions(0);
     setCurrentDay(null);
     setCurrentTopic(null);
+    setDaysCovered([]);
     setInterviewComplete(false);
     setFeedback(null);
     setError(null);
@@ -252,7 +310,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
           setMessages(
             snapshot.messages.map((msg) => ({
               id: nextId(),
-              role: msg.role,
+              role: msg.role as "candidate" | "interviewer",
               text: msg.text,
             }))
           );
@@ -279,6 +337,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
       totalQuestions,
       currentDay,
       currentTopic,
+      daysCovered,
       interviewComplete,
       feedback,
       interviewerTyping,
@@ -303,6 +362,7 @@ export function InterviewProvider({ children }: { children: ReactNode }) {
       totalQuestions,
       currentDay,
       currentTopic,
+      daysCovered,
       interviewComplete,
       feedback,
       interviewerTyping,

@@ -19,6 +19,34 @@ load_dotenv()
 # Base directory of the backend package (this file lives in backend/).
 BACKEND_DIR = Path(__file__).resolve().parent
 
+#: Accepted dataset filenames.  The official datasets ship as
+#: ``candidates.json`` (plural) but ``candidate.json`` is also accepted for
+#: backwards compatibility with earlier copies.
+CANDIDATE_DATASET_NAMES = ("candidates.json", "candidate.json")
+CURRICULUM_DATASET_NAMES = ("curriculum.json",)
+SPEC_DATASET_NAMES = ("technical-spec.md", "technical_spec.md")
+
+
+def find_dataset_file(data_dir: str | Path, names: tuple[str, ...]) -> Path | None:
+    """Locate a dataset file across the likely data locations.
+
+    Searches, in order:
+
+    1. ``AI_DATA_DIR`` (the configured data directory),
+    2. the backend package directory itself (``backend/``),
+    3. the repository root (the parent of ``backend/``).
+
+    The datasets may therefore live in ``backend/data/``, ``backend/`` or at
+    the project root — wherever they were dropped in.
+    """
+    bases = [Path(data_dir), BACKEND_DIR, BACKEND_DIR.parent]
+    for base in bases:
+        for name in names:
+            candidate = base / name
+            if candidate.exists() and candidate.is_file():
+                return candidate
+    return None
+
 
 def _env_bool(name: str, default: bool) -> bool:
     value = os.getenv(name)
@@ -56,9 +84,14 @@ class Settings:
     data_dir: str = os.getenv("AI_DATA_DIR", str(BACKEND_DIR / "data"))
 
     # --- Interview parameters ---------------------------------------------
+    # MIN is a hard requirement; TARGET is the soft budget the interview
+    # finishes at once the minimums are met and evidence is sufficient;
+    # MAX is the absolute safety ceiling on main questions.  The interview
+    # should feel concise (8-10) and never routinely run to 12+.
     min_questions: int = int(os.getenv("INTERVIEW_MIN_QUESTIONS", "8"))
     min_days: int = int(os.getenv("INTERVIEW_MIN_DAYS", "4"))
-    total_questions: int = int(os.getenv("INTERVIEW_TOTAL_QUESTIONS", "12"))
+    total_questions: int = int(os.getenv("INTERVIEW_TOTAL_QUESTIONS", "10"))
+    max_questions: int = int(os.getenv("INTERVIEW_MAX_QUESTIONS", "12"))
     max_follow_ups_per_question: int = int(
         os.getenv("INTERVIEW_MAX_FOLLOW_UPS", "2")
     )

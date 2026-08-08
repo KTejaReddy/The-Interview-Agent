@@ -55,5 +55,6 @@ class FollowUpStrategy(str, Enum):
     DEEPER = "deeper"          # answer was good -> probe deeper
     SIMPLIFY = "simplify"      # answer was weak -> easier sub-question
     RECOVERY = "recovery"      # answer was wrong -> scaffold & recover
+    VERIFY = "verify"          # bare knowledge claim -> ask for evidence
     NEXT_TOPIC = "next_topic"  # answer sufficient -> move on
     PROBE = "probe"            # answer unclear -> ask for clarification

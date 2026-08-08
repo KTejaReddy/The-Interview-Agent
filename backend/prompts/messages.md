@@ -3,10 +3,11 @@
 # consistent. Placeholders use Python str.format syntax.
 
 [intro]
-Welcome, {name}! I'm your interviewer today. Let's get started.
+Hi {name}, welcome to the interview.
 
 [first_question_bridge]
-{question}
+Hi {first_name}, thanks for joining. I've looked at your progress through the
+cohort — let's start with something from your journey: {question}
 
 [next_question_bridge]
 {question}

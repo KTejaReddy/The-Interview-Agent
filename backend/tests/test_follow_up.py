@@ -149,7 +149,7 @@ async def test_follow_up_branch() -> None:
     LONG_INTRO = "Hi! I'm Alex Doe, a junior Python developer working on REST APIs."
 
     # Create the session (the message is stored but not duplicated).
-    session = await manager.start_session("candidate-1", LONG_INTRO)
+    session = await manager.start_session("CAND-001", LONG_INTRO)
 
     # Turn 1: send the same long message → intro is skipped → Q1 is asked.
     r0 = await manager.handle_message(session, LONG_INTRO)

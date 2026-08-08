@@ -139,30 +139,43 @@ export function Landing({ onNavigate }: LandingProps) {
                     <button
                       key={candidate.id}
                       onClick={() => setSelected(candidate.id)}
-                      className={`group flex items-center justify-between rounded-2xl border px-5 py-4 text-left transition-all duration-200 ${
+                      className={`group rounded-2xl border px-5 py-4 text-left transition-all duration-200 ${
                         active
                           ? "border-accent-500/60 bg-accent-500/10 shadow-lg shadow-accent-500/10"
                           : "border-base-700 bg-base-900/60 hover:border-accent-500/40 hover:bg-base-800"
                       }`}
                     >
-                      <div>
-                        <p className="font-semibold text-white">
-                          {candidate.name || candidate.id}
-                        </p>
-                        <p className="text-sm text-slate-400">
-                          {candidate.role || "No role provided"} ·{" "}
-                          <span className="font-mono text-xs">{candidate.id}</span>
-                        </p>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-white">
+                            {candidate.name || candidate.id}
+                          </p>
+                          <p className="text-sm text-slate-400">
+                            {candidate.role || "No role provided"} ·{" "}
+                            <span className="font-mono text-xs">{candidate.id}</span>
+                          </p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            {candidate.experience != null && (
+                              <>
+                                {candidate.experience}y ·{" "}
+                              </>
+                            )}
+                            {candidate.education || "—"}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-3">
+                          <CandidateStats candidate={candidate} />
+                          <span
+                            className={`flex h-5 w-5 items-center justify-center rounded-full border-2 transition ${
+                              active
+                                ? "border-accent-400 bg-accent-500"
+                                : "border-slate-600 group-hover:border-accent-500/50"
+                            }`}
+                          >
+                            {active && <span className="h-2 w-2 rounded-full bg-white" />}
+                          </span>
+                        </div>
                       </div>
-                      <span
-                        className={`flex h-5 w-5 items-center justify-center rounded-full border-2 transition ${
-                          active
-                            ? "border-accent-400 bg-accent-500"
-                            : "border-slate-600 group-hover:border-accent-500/50"
-                        }`}
-                      >
-                        {active && <span className="h-2 w-2 rounded-full bg-white" />}
-                      </span>
                     </button>
                   );
                 })}
@@ -207,9 +220,66 @@ export function Landing({ onNavigate }: LandingProps) {
         </section>
 
         <footer className="mt-16 text-center text-xs text-slate-600">
-          Driven by curriculum.json · candidate.json · technical-spec.md — read-only, never modified.
+          Driven by curriculum.json · candidates.json · technical-spec.md — read-only, never modified.
         </footer>
       </div>
+    </div>
+  );
+}
+
+interface CandidateStatsProps {
+  candidate: {
+    missionsCompleted?: number;
+    missionsFirstTry?: number;
+    struggles?: number;
+    skipped?: number;
+    failed?: number;
+  };
+}
+
+function CandidateStats({ candidate }: CandidateStatsProps) {
+  const chips: { label: string; value: number; tone: string }[] = [];
+  if (candidate.missionsCompleted != null) {
+    chips.push({
+      label: "passed",
+      value: candidate.missionsCompleted,
+      tone: "text-mint-400 border-mint-500/30 bg-mint-500/10",
+    });
+  }
+  if (candidate.struggles) {
+    chips.push({
+      label: "struggled",
+      value: candidate.struggles,
+      tone: "text-amber-400 border-amber-400/30 bg-amber-400/10",
+    });
+  }
+  if (candidate.failed) {
+    chips.push({
+      label: "failed",
+      value: candidate.failed,
+      tone: "text-red-400 border-red-400/30 bg-red-400/10",
+    });
+  }
+  if (candidate.skipped) {
+    chips.push({
+      label: "skipped",
+      value: candidate.skipped,
+      tone: "text-slate-400 border-base-600 bg-base-800",
+    });
+  }
+  return (
+    <div className="hidden flex-col items-end gap-1 sm:flex">
+      {chips.map((chip) => (
+        <span
+          key={chip.label}
+          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${chip.tone}`}
+        >
+          {chip.value} {chip.label}
+        </span>
+      ))}
+      {chips.length === 0 && (
+        <span className="text-[10px] text-slate-600">no mission data</span>
+      )}
     </div>
   );
 }

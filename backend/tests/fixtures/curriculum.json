@@ -1,58 +1,51 @@
 {
+  "cohort": "Test Cohort · 6 days · 2 modules",
+  "modules": [
+    { "n": 1, "title": "Programming Foundations", "days": [1, 3] },
+    { "n": 2, "title": "Data & Production", "days": [4, 6] }
+  ],
   "days": [
     {
-      "id": 1,
+      "day": 1,
       "title": "Python Fundamentals",
-      "module": "Programming Basics",
-      "objectives": ["Write and run Python scripts", "Understand data types and control flow"],
+      "type": "SETUP",
       "tools": ["Python 3", "VS Code"],
-      "learning_goals": ["Confidently use variables, conditionals and loops"],
-      "topics": ["python-variables", "python-conditionals", "python-loops"]
+      "objectives": ["Write and run Python scripts", "Understand data types and control flow"]
     },
     {
-      "id": 2,
+      "day": 2,
       "title": "Object-Oriented Programming",
-      "module": "Core Concepts",
-      "objectives": ["Model problems with classes", "Apply inheritance and polymorphism"],
+      "type": "LEARN",
       "tools": ["Python 3"],
-      "learning_goals": ["Design small OO systems"],
-      "topics": ["oops-classes", "oops-inheritance", "oops-polymorphism"]
+      "objectives": ["Model problems with classes", "Apply inheritance and polymorphism"]
     },
     {
-      "id": 3,
+      "day": 3,
       "title": "Data Structures & Algorithms",
-      "module": "Core Concepts",
-      "objectives": ["Analyze complexity", "Implement core structures"],
+      "type": "BUILD",
       "tools": ["Python 3", "pytest"],
-      "learning_goals": ["Solve problems with the right structure"],
-      "topics": ["dsa-arrays", "dsa-linked-lists", "dsa-complexity"]
+      "objectives": ["Analyze complexity", "Implement core structures"]
     },
     {
-      "id": 4,
-      "title": "Databases",
-      "module": "Data Layer",
-      "objectives": ["Model relational schemas", "Write correct SQL"],
-      "tools": ["PostgreSQL"],
-      "learning_goals": ["Design normalized schemas"],
-      "topics": ["db-sql", "db-normalization", "db-indexes"]
+      "day": 4,
+      "title": "Databases & SQL",
+      "type": "BUILD",
+      "tools": ["SQLite", "SQL"],
+      "objectives": ["Model relational schemas", "Write correct SQL queries"]
     },
     {
-      "id": 5,
-      "title": "Web Development",
-      "module": "Application Layer",
-      "objectives": ["Build HTTP APIs", "Handle requests and responses"],
+      "day": 5,
+      "title": "Web API Development",
+      "type": "BUILD",
       "tools": ["FastAPI", "REST"],
-      "learning_goals": ["Ship a small API service"],
-      "topics": ["web-rest", "web-http", "web-api-design"]
+      "objectives": ["Build HTTP APIs", "Handle requests and responses"]
     },
     {
-      "id": 6,
+      "day": 6,
       "title": "Deployment & Production",
-      "module": "Operations",
-      "objectives": ["Containerize services", "Deploy safely"],
+      "type": "SHIP_IT",
       "tools": ["Docker", "CI/CD"],
-      "learning_goals": ["Deploy a service with monitoring"],
-      "topics": ["prod-docker", "prod-ci-cd", "prod-monitoring"]
+      "objectives": ["Containerize services", "Deploy safely with monitoring"]
     }
   ]
 }

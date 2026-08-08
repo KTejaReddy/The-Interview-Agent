@@ -6,7 +6,7 @@ repairs and retries until the payload validates (or gives up and raises).
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -36,7 +36,9 @@ class EvaluationDraft(BaseModel):
 
     score: int = Field(..., ge=0, le=10)
     verdict: Literal["excellent", "good", "weak", "wrong", "unclear"]
-    follow_up: Literal["deeper", "simplify", "recovery", "next_topic", "probe"]
+    follow_up: Literal[
+        "deeper", "simplify", "recovery", "verify", "next_topic", "probe"
+    ]
     mastered_topic: bool = Field(
         default=False, description="Whether the topic is now considered covered"
     )
@@ -80,10 +82,17 @@ class FeedbackResult(BaseModel):
     topics_covered: list[str]
 
     def to_api_payload(self) -> dict:
-        """Expose ONLY the fields required by the specification."""
-        return {
+        """Expose the spec fields plus an optional extended ``score``.
+
+        ``score`` is not part of the contract; it is only emitted when the
+        frontend asks for it (it powers the post-interview score ring).
+        """
+        payload: dict[str, Any] = {
             "summary": self.summary,
             "strengths": list(self.strengths),
             "gaps": list(self.gaps),
             "next": list(self.next),
         }
+        if self.score:
+            payload["score"] = self.score
+        return payload

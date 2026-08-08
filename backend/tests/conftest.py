@@ -17,5 +17,6 @@ os.environ["LLM_MOCK_MODE"] = "true"
 os.environ["LLM_API_KEY"] = ""
 os.environ.setdefault("INTERVIEW_MIN_QUESTIONS", "8")
 os.environ.setdefault("INTERVIEW_MIN_DAYS", "4")
-os.environ.setdefault("INTERVIEW_TOTAL_QUESTIONS", "12")
+os.environ.setdefault("INTERVIEW_TOTAL_QUESTIONS", "10")
+os.environ.setdefault("INTERVIEW_MAX_QUESTIONS", "12")
 os.environ.setdefault("SESSION_TTL_SECONDS", "3600")

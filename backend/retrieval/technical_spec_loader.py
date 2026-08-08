@@ -1,13 +1,15 @@
 """Technical spec loader.
 
-Reads ``technical-spec.md`` from the data directory and keeps its raw
-markdown available to the feedback generator and API layer so the project
-can stay aligned with the specification document.  The file is read only.
+Reads ``technical-spec.md`` from the data directory (or the project root)
+and keeps its raw markdown available to the feedback generator and API
+layer so the project can stay aligned with the specification document.  The
+file is read only.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
+from config import SPEC_DATASET_NAMES, find_dataset_file
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -17,11 +19,12 @@ class TechnicalSpecLoader:
     """Loads and caches technical-spec.md."""
 
     def __init__(self, data_dir: str | Path) -> None:
-        self._path = Path(data_dir) / "technical-spec.md"
+        self._data_dir = data_dir
+        self._path: Path | None = None
         self._content: str | None = None
 
     @property
-    def path(self) -> Path:
+    def path(self) -> Path | None:
         return self._path
 
     @property
@@ -30,8 +33,11 @@ class TechnicalSpecLoader:
 
     def load(self) -> str | None:
         """Load the spec; returns None (with a logged warning) if missing."""
-        if not self._path.exists():
-            logger.warning("technical-spec.md not found at %s", self._path)
+        self._path = find_dataset_file(self._data_dir, SPEC_DATASET_NAMES)
+        if self._path is None:
+            logger.warning(
+                "technical-spec.md not found in the data directory or project root"
+            )
             self._content = None
             return None
         try:

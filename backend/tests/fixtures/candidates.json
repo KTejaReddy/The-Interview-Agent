@@ -1,0 +1,42 @@
+{
+  "candidates": [
+    {
+      "member": {
+        "id": "CAND-001",
+        "name": "Alex Doe",
+        "jobRole": "Junior Python Developer",
+        "yearsExperience": 1.5,
+        "education": "B.Sc. Computer Science",
+        "status": "COMPLETED"
+      },
+      "missions": [
+        { "day": 1, "title": "Python Fundamentals", "passed": true, "attempts": 1 },
+        { "day": 2, "title": "Object-Oriented Programming", "passed": true, "attempts": 2 },
+        { "day": 3, "title": "Data Structures & Algorithms", "passed": true, "attempts": 4 },
+        { "day": 4, "title": "Databases & SQL", "passed": true, "attempts": 1 },
+        { "day": 5, "title": "Web API Development", "passed": true, "attempts": 3 },
+        { "day": 6, "title": "Deployment & Production", "skipped": true }
+      ],
+      "signals": { "commitDays": 18, "missionsCompleted": 26, "missionsFirstTry": 4 }
+    },
+    {
+      "member": {
+        "id": "CAND-002",
+        "name": "Priya Sharma",
+        "jobRole": "Senior Backend Engineer",
+        "yearsExperience": 7,
+        "education": "M.Tech Software Engineering",
+        "status": "COMPLETED"
+      },
+      "missions": [
+        { "day": 1, "title": "Python Fundamentals", "passed": true, "attempts": 1 },
+        { "day": 2, "title": "Object-Oriented Programming", "passed": true, "attempts": 1 },
+        { "day": 3, "title": "Data Structures & Algorithms", "passed": true, "attempts": 1 },
+        { "day": 4, "title": "Databases & SQL", "passed": true, "attempts": 1 },
+        { "day": 5, "title": "Web API Development", "passed": true, "attempts": 1 },
+        { "day": 6, "title": "Deployment & Production", "passed": true, "attempts": 2 }
+      ],
+      "signals": { "commitDays": 31, "missionsCompleted": 31, "missionsFirstTry": 29 }
+    }
+  ]
+}

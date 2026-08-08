@@ -57,6 +57,15 @@ class ConversationMemory:
     def __init__(self, max_history_turns: int = 12) -> None:
         self._turns: list[TurnRecord] = []
         self._max_history_turns = max_history_turns
+        #: Curriculum concepts the candidate brought up themselves (used to
+        #: reference their own words later in the interview).
+        self.mentions: list[str] = []
+
+    def add_mentions(self, concepts: list[str]) -> None:
+        """Record curriculum concepts the candidate mentioned in an answer."""
+        for concept in concepts:
+            if concept not in self.mentions:
+                self.mentions.append(concept)
 
     # --- writers ---------------------------------------------------------
 
@@ -111,6 +120,10 @@ class ConversationMemory:
     @property
     def topics_covered(self) -> list[str]:
         return list(dict.fromkeys(turn.topic for turn in self._turns))
+
+    def question_count_on_topic(self, topic: str) -> int:
+        """Total questions (main + follow-ups) asked on a topic."""
+        return sum(1 for turn in self._turns if turn.topic == topic)
 
     @property
     def days_covered(self) -> list[int]:

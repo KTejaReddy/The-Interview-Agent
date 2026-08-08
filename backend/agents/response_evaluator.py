@@ -1,11 +1,28 @@
 """Response evaluator.
 
 Rates the candidate's answer on a 0-10 scale, assigns a verdict and decides
-the interviewer's next move (deeper / simplify / recovery / probe / move on).
-The decision feeds both the follow-up generator and the state machine.
+the interviewer's next move (deeper / verify / simplify / recovery / probe /
+move on).
+
+Deterministic rules run *alongside* the LLM verdict so behaviour is
+predictable where it matters most:
+
+* an "I don't know" style answer always lands in the weak/simplify branch,
+  regardless of what the model says,
+* a *bare knowledge claim* ("I know", "yes", "I understand" with no
+  substance) is never treated as demonstrated competence: it is marked
+  ``VERIFY`` so the interviewer asks for evidence with a concrete scenario,
+* failure ladder on the same topic: first struggle -> a different, simpler
+  diagnostic question (``simplify``); second struggle -> a foundational
+  scaffolding question (``recovery``); third struggle -> the topic is marked
+  weak and the interviewer moves on (``next_topic``), never trapping the
+  candidate,
+* every answer updates the per-topic assessment (confidence, counters,
+  best/worst score) that drives planning and final feedback.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from memory.context_manager import InterviewContext
@@ -14,6 +31,14 @@ from models.plan import PlannedQuestion
 from schemas.llm import EvaluationDraft
 from services.llm_service import LLMService
 from services.prompt_builder import PromptBuilder
+from utils.answer_signals import (
+    detects_claim_without_evidence,
+    detects_greeting,
+    detects_idk,
+)
+from utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 _VERDICT_MAP = {
     "excellent": Verdict.EXCELLENT,
@@ -27,9 +52,24 @@ _STRATEGY_MAP = {
     "deeper": FollowUpStrategy.DEEPER,
     "simplify": FollowUpStrategy.SIMPLIFY,
     "recovery": FollowUpStrategy.RECOVERY,
+    "verify": FollowUpStrategy.VERIFY,
     "probe": FollowUpStrategy.PROBE,
     "next_topic": FollowUpStrategy.NEXT_TOPIC,
 }
+
+#: Repeated failures on the same topic before the interviewer moves on.
+#: First -> SIMPLIFY (a *different*, easier diagnostic; or RECOVERY when
+#: the answer was a recognizable misconception), second -> NEXT_TOPIC
+#: (mark weak, never trap).  A real interviewer does not spend 5-6
+#: questions on one concept the candidate cannot answer.
+_MAX_CONSECUTIVE_FAILURES = 2
+
+#: Regexes that hint at a non-answer even when worded unusually (defensive,
+#: complements the stricter detectors in ``utils.answer_signals``).
+_WEAK_ANSWER_PATTERNS = (
+    re.compile(r"^(?:well|hmm|um|uh|ok|okay|so)[,.\s]*$", re.I),
+    re.compile(r"^\s*$"),
+)
 
 
 @dataclass
@@ -49,12 +89,13 @@ class EvaluationResult:
             FollowUpStrategy.DEEPER,
             FollowUpStrategy.SIMPLIFY,
             FollowUpStrategy.RECOVERY,
+            FollowUpStrategy.VERIFY,
             FollowUpStrategy.PROBE,
         }
 
 
 class ResponseEvaluator:
-    """Single-responsibility evaluator (LLM-backed)."""
+    """Single-responsibility evaluator (LLM-backed + deterministic rules)."""
 
     def __init__(self, llm: LLMService, prompts: PromptBuilder) -> None:
         self._llm = llm
@@ -73,6 +114,8 @@ class ResponseEvaluator:
             question_type=question.question_type.value,
             difficulty=question.difficulty.value,
             intent=question.intent,
+            learning_objective=question.learning_objective,
+            concept=question.concept,
             answer=answer,
         )
         draft: EvaluationDraft = await self._llm.structured_completion(
@@ -80,32 +123,110 @@ class ResponseEvaluator:
             user_prompt=prompt,
             schema=EvaluationDraft,
         )
-        
+
         verdict = _VERDICT_MAP.get(draft.verdict, Verdict.UNCLEAR)
         strategy = _STRATEGY_MAP.get(draft.follow_up, FollowUpStrategy.NEXT_TOPIC)
-        
-        # Update AssessmentState
-        topic_assessment = context.plan.assessment.get_topic(question.topic)
-        
-        if verdict in (Verdict.WRONG, Verdict.WEAK):
-            topic_assessment.consecutive_failures += 1
-            if topic_assessment.consecutive_failures >= 2:
-                topic_assessment.confidence = "low"
-        else:
-            topic_assessment.consecutive_failures = 0
-            if draft.mastered_topic or verdict == Verdict.EXCELLENT:
-                topic_assessment.confidence = "high"
-            elif verdict == Verdict.GOOD:
-                topic_assessment.confidence = "medium"
+        score = draft.score
+        notes = draft.notes or ""
+        mastered = draft.mastered_topic
 
-        # Problem 4: Handle repeated failures intelligently
-        if topic_assessment.consecutive_failures >= 2:
-            strategy = FollowUpStrategy.NEXT_TOPIC
-            
+        # --- deterministic signal overrides -------------------------------
+        # These are the hard rules: surface phrases never decide competence.
+        claim = False
+        if detects_idk(answer):
+            score = min(score, 3)
+            verdict = Verdict.WEAK if verdict not in (Verdict.WRONG,) else Verdict.WRONG
+            strategy = (
+                FollowUpStrategy.SIMPLIFY
+                if verdict == Verdict.WEAK
+                else FollowUpStrategy.RECOVERY
+            )
+            mastered = False
+            notes = "The candidate did not provide a substantive answer."
+        elif detects_greeting(answer):
+            # "hello" / "okay" / "hmm": a non-answer, not a claim.  One
+            # short, simpler recovery question is enough.
+            score = min(score, 3)
+            verdict = Verdict.WEAK
+            strategy = FollowUpStrategy.SIMPLIFY
+            mastered = False
+            notes = "The candidate gave a greeting/non-answer — ask the same assessment more simply."
+        elif detects_claim_without_evidence(answer):
+            # "I know" / "yes" / "I understand" without content: not evidence.
+            # Probe with a concrete scenario instead of rewarding the claim.
+            score = min(score, 5)
+            verdict = Verdict.UNCLEAR
+            strategy = FollowUpStrategy.VERIFY
+            mastered = False
+            claim = True
+            notes = (
+                "The candidate asserted knowledge without demonstrating it — "
+                "verify with a concrete scenario from the learning objective."
+            )
+        elif any(pattern.match(answer) for pattern in _WEAK_ANSWER_PATTERNS):
+            score = min(score, 3)
+            verdict = Verdict.WEAK
+            strategy = FollowUpStrategy.SIMPLIFY
+            mastered = False
+            notes = "The candidate gave no substantive answer."
+
+        # --- update the per-topic assessment -------------------------------
+        topic_assessment = context.plan.assessment.get_topic(question.topic)
+        topic_assessment.questions_asked += 1
+        topic_assessment.best_score = max(topic_assessment.best_score, score)
+        topic_assessment.worst_score = min(topic_assessment.worst_score, score)
+        topic_assessment.evidence.append(
+            f"{'follow-up' if context.is_follow_up else 'main'}: score {score}/10 "
+            f"({verdict.value}){' [bare claim]' if claim else ''}"
+        )
+
+        if claim:
+            # Repeated bare claims never become evidence.  After two
+            # consecutive claims with no substance, stop probing this topic
+            # (insufficient evidence) and move on — never trap the candidate.
+            topic_assessment.bare_claims += 1
+            if topic_assessment.bare_claims >= 2:
+                strategy = FollowUpStrategy.NEXT_TOPIC
+                notes = (
+                    "The candidate repeatedly asserted knowledge without "
+                    "demonstrating it — mark insufficient evidence and move on."
+                )
+
+        if verdict in (Verdict.WRONG, Verdict.WEAK):
+            # Failure ladder (max two attempts per weak concept): first
+            # struggle -> a different, simpler diagnostic (or a scaffolding
+            # probe for a wrong answer); second struggle -> mark the topic
+            # weak and move on.  Never trap the candidate on one concept.
+            topic_assessment.consecutive_failures += 1
+            failures = topic_assessment.consecutive_failures
+            if failures >= _MAX_CONSECUTIVE_FAILURES:
+                topic_assessment.confidence = "low"
+                strategy = FollowUpStrategy.NEXT_TOPIC
+            elif verdict == Verdict.WRONG:
+                # Misconception: probe it once with a concrete diagnostic.
+                strategy = FollowUpStrategy.RECOVERY
+            else:
+                # First struggle: a *different*, simpler diagnostic question.
+                strategy = FollowUpStrategy.SIMPLIFY
+        elif verdict in (Verdict.GOOD, Verdict.EXCELLENT):
+            # Demonstrated evidence clears both failure and bare-claim marks:
+            # a strong answer between two claims means the second claim is not
+            # a fresh reason to abandon the topic.
+            topic_assessment.consecutive_failures = 0
+            topic_assessment.bare_claims = 0
+            if mastered or verdict == Verdict.EXCELLENT:
+                topic_assessment.confidence = "high"
+            else:
+                topic_assessment.confidence = "medium"
+                if topic_assessment.best_score >= 8:
+                    topic_assessment.confidence = "high"
+        # Verdict.UNCLEAR (bare claim): no confidence change; the claim is
+        # neither a mistake nor evidence.
+
         return EvaluationResult(
-            score=draft.score,
+            score=score,
             verdict=verdict,
             strategy=strategy,
-            mastered_topic=draft.mastered_topic,
-            notes=draft.notes,
+            mastered_topic=mastered,
+            notes=notes,
         )

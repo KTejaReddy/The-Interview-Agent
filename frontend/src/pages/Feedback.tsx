@@ -1,13 +1,14 @@
+import { Brand } from "../components/Brand";
+import { ScoreRing } from "../components/ScoreRing";
 import { useInterview } from "../context/InterviewContext";
 import type { Page } from "../types";
-import { Brand } from "../components/Brand";
 
 interface FeedbackProps {
   onNavigate: (page: Page) => void;
 }
 
 export function Feedback({ onNavigate }: FeedbackProps) {
-  const { feedback, questionNumber, totalQuestions, reset } = useInterview();
+  const { feedback, questionNumber, daysCovered, reset } = useInterview();
 
   if (!feedback) {
     return (
@@ -48,16 +49,26 @@ export function Feedback({ onNavigate }: FeedbackProps) {
         <div className="animate-fade-up">
           {/* Hero card */}
           <div className="rounded-3xl border border-mint-500/25 bg-gradient-to-br from-base-800 to-base-900 p-8 shadow-2xl shadow-black/40">
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-mint-500/30 bg-mint-500/10 px-3 py-1 text-xs font-semibold text-mint-400">
+            <div className="mb-2 inline-flex flex-wrap items-center gap-2 rounded-full border border-mint-500/30 bg-mint-500/10 px-3 py-1 text-xs font-semibold text-mint-400">
               <span className="h-1.5 w-1.5 rounded-full bg-mint-400" />
-              Interview complete · {questionNumber} of {totalQuestions} questions
+              Interview complete · {questionNumber} questions ·{" "}
+              {daysCovered.length} curriculum {daysCovered.length === 1 ? "day" : "days"}
             </div>
-            <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-white md:text-4xl">
-              Your interview feedback
-            </h1>
-            <p className="mt-4 text-[15px] leading-relaxed text-slate-300">
-              {feedback.summary}
-            </p>
+            <div className="mt-4 flex flex-col items-start gap-6 sm:flex-row sm:items-center">
+              {typeof feedback.score === "number" && (
+                <div className="shrink-0">
+                  <ScoreRing score={feedback.score} />
+                </div>
+              )}
+              <div className="min-w-0">
+                <h1 className="text-3xl font-extrabold tracking-tight text-white md:text-4xl">
+                  Your interview feedback
+                </h1>
+                <p className="mt-4 text-[15px] leading-relaxed text-slate-300">
+                  {feedback.summary}
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Strengths */}

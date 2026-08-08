@@ -50,7 +50,13 @@ class FeedbackGenerator:
         )
 
     async def generate(self, context: InterviewContext) -> FeedbackResult:
-        """Ask the LLM for qualitative feedback, blending internal metrics."""
+        """Ask the LLM for qualitative feedback, blending internal metrics.
+
+        ``topics_covered`` is ALWAYS the authoritative list from the session
+        memory (the same state the planner and manager use) — it is never
+        reconstructed from generated text, and the LLM's own list is ignored
+        so feedback can never disagree with the interview state.
+        """
         internal = self.compute_internal_metrics(context)
         prompt = self._prompts.feedback_prompt(context)
         try:
@@ -92,5 +98,6 @@ class FeedbackGenerator:
             next=draft.next,
             score=draft.score,
             confidence=draft.confidence,
-            topics_covered=draft.topics_covered or internal.topics_covered,
+            # Authoritative interview state, never the LLM's guess.
+            topics_covered=internal.topics_covered,
         )

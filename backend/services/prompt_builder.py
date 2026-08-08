@@ -3,6 +3,11 @@
 Loads every prompt template from ``backend/prompts/*.md`` once and exposes
 methods that fill them with concrete context.  No service contains prompt
 text inline; all wording lives in the template files.
+
+The question prompt receives a structured :class:`QuestionIntent` — the
+learning objective, derived concept, purpose and evidence bar — so the LLM
+translates *what we want to assess* into natural interviewer language
+instead of substituting a topic title into a template.
 """
 from __future__ import annotations
 
@@ -10,7 +15,7 @@ from pathlib import Path
 
 from config import Settings
 from memory.context_manager import InterviewContext
-from retrieval.curriculum_retriever import CurriculumRetriever
+from models.question_intent import QuestionIntent
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -46,30 +51,70 @@ class PromptBuilder:
     def system_prompt(self) -> str:
         return self._templates["interviewer_system"]
 
+    # --- shared context ---------------------------------------------------
+
+    @staticmethod
+    def _assessment_summary(context: InterviewContext) -> str:
+        """Per-topic evidence collected so far (never profile guesses)."""
+        lines: list[str] = []
+        for topic, state in context.plan.assessment.topics.items():
+            if not state.assessed:
+                continue
+            lines.append(
+                f"- {topic}: confidence={state.confidence}, "
+                f"failures={state.consecutive_failures}, "
+                f"scores {state.worst_score}-{state.best_score}/10"
+            )
+        return "\n".join(lines) if lines else "No evidence collected yet."
+
+    @staticmethod
+    def _last_answer(context: InterviewContext) -> str:
+        last = context.memory.last()
+        return last.answer if last else "none yet"
+
+    @staticmethod
+    def _previous_questions(context: InterviewContext) -> str:
+        questions = [turn.question for turn in context.memory.all_turns]
+        return "\n".join(f"- {question}" for question in questions) or "none yet"
+
     # --- user prompts -----------------------------------------------------
 
     def question_prompt(
         self,
         context: InterviewContext,
         *,
-        topic: str,
+        intent: QuestionIntent,
         question_type: str,
         difficulty: str,
         curriculum: str,
+        previous_topic: str,
     ) -> str:
         return self._templates["generate_question"].format(
             candidate_summary=context.candidate.summary,
             strong_topics=", ".join(context.candidate.strong_topics) or "none",
             weak_topics=", ".join(context.candidate.weak_topics) or "none",
             knowledge_gaps=", ".join(context.candidate.knowledge_gaps) or "none",
+            assessment_summary=self._assessment_summary(context),
+            previous_answer=self._last_answer(context),
+            previous_questions=self._previous_questions(context),
             curriculum_context=curriculum,
-            topic=topic,
+            day_number=intent.curriculum_day,
+            day_title=intent.topic,
+            module=intent.module or "—",
+            learning_objective=intent.learning_objective or "—",
+            concept=intent.concept or "—",
             question_type=question_type,
+            cognitive_level=intent.cognitive_level or "—",
+            purpose=intent.purpose or "—",
+            expected_evidence=", ".join(intent.expected_evidence) or "—",
             difficulty=difficulty,
             question_number=context.current_question_index + 1,
-            total_questions=context.plan.size,
+            total_questions=max(context.plan.size, 8),
             topics_covered=", ".join(context.memory.topics_covered) or "none yet",
-            previous_questions="\n".join(f"- {turn.question}" for turn in context.memory.all_turns) or "none yet",
+            previous_topic=previous_topic or "none",
+            relationship=intent.relationship or "—",
+            candidate_signal=intent.candidate_signal or "—",
+            candidate_mentions=context.candidate_mentions,
         )
 
     def evaluate_prompt(
@@ -81,6 +126,8 @@ class PromptBuilder:
         question_type: str,
         difficulty: str,
         intent: str,
+        learning_objective: str,
+        concept: str,
         answer: str,
     ) -> str:
         return self._templates["evaluate_answer"].format(
@@ -89,6 +136,8 @@ class PromptBuilder:
             question_type=question_type,
             difficulty=difficulty,
             intent=intent or "—",
+            learning_objective=learning_objective or "—",
+            concept=concept or "—",
             answer=answer or "—",
             candidate_summary=context.candidate.summary,
             aggregate_summary=context.aggregate_summary,
@@ -100,6 +149,11 @@ class PromptBuilder:
         *,
         question: str,
         topic: str,
+        learning_objective: str,
+        concept: str,
+        expected_evidence: list[str],
+        day_title: str,
+        module: str,
         answer: str,
         verdict: str,
         score: int,
@@ -107,10 +161,17 @@ class PromptBuilder:
         notes: str,
         curriculum: str,
         difficulty: str,
+        follow_up_count: int,
+        previous_questions: list[str],
     ) -> str:
         return self._templates["generate_follow_up"].format(
             question=question,
             topic=topic,
+            day_title=day_title,
+            module=module or "—",
+            learning_objective=learning_objective or "—",
+            concept=concept or "—",
+            expected_evidence=", ".join(expected_evidence) or "—",
             answer=answer or "—",
             verdict=verdict,
             score=score,
@@ -118,21 +179,55 @@ class PromptBuilder:
             notes=notes or "—",
             curriculum_context=curriculum,
             difficulty=difficulty,
+            follow_up_count=follow_up_count,
+            previous_questions="\n".join(
+                f"- {q}" for q in previous_questions
+            )
+            or "none yet",
         )
 
     def feedback_prompt(self, context: InterviewContext) -> str:
-        # Create a formatted assessment string
+        # Evidence-based assessment state: per-topic verdicts and scores
+        # from the actual interview (never invented).  EVERY touched topic
+        # is listed — including topics where the candidate produced no
+        # evidence — so feedback can never again report "0 topics" while
+        # the transcript clearly covered several.
         assessment_lines = []
         for topic, state in context.plan.assessment.topics.items():
-            if state.confidence != "unknown":
-                assessment_lines.append(f"- {topic}: confidence {state.confidence}")
-        assessment_str = "\n".join(assessment_lines) if assessment_lines else "No specific topic assessments available."
+            if not state.touched:
+                continue
+            evidence = "; ".join(state.evidence) or "no explicit evidence"
+            confidence = (
+                state.confidence
+                if state.assessed
+                else "insufficient_evidence"
+            )
+            status = state.knowledge_status
+            assessment_lines.append(
+                f"- {topic}: knowledge_status={status}, confidence={confidence}, "
+                f"failures={state.consecutive_failures}, "
+                f"bare_claims={state.bare_claims}, "
+                f"score range {state.worst_score}-{state.best_score}/10 | {evidence}"
+            )
+        assessment_str = (
+            "\n".join(assessment_lines)
+            if assessment_lines
+            else "No topic could be confidently assessed."
+        )
+
+        # Topics from the profile that were NOT tested: the feedback must not
+        # claim knowledge (or lack of it) about untested material.
+        not_tested = (
+            context.candidate.failed_topics + context.candidate.knowledge_gaps
+        )
+        not_tested_str = ", ".join(not_tested) if not_tested else "none"
 
         return self._templates["generate_feedback"].format(
             transcript=context.transcript_excerpt,
             candidate_summary=context.candidate.summary,
             aggregate_summary=context.aggregate_summary,
             assessment_state=assessment_str,
+            not_tested=not_tested_str,
         )
 
     # --- deterministic messages (no LLM) ----------------------------------

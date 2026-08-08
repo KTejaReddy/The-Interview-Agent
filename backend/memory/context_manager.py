@@ -36,6 +36,12 @@ class InterviewContext:
         return self.memory.format_transcript()
 
     @property
+    def candidate_mentions(self) -> str:
+        """Curriculum concepts the candidate raised, for cross-referencing."""
+        mentions = self.memory.mentions
+        return ", ".join(mentions) if mentions else "none yet"
+
+    @property
     def aggregate_summary(self) -> str:
         mem = self.memory
         return (
@@ -44,7 +50,8 @@ class InterviewContext:
             f"Curriculum days covered: {len(mem.days_covered)} "
             f"({', '.join(map(str, mem.days_covered)) or 'none'})\n"
             f"Mistakes: {len(mem.mistakes)} | Strong answers: {len(mem.strong_answers)}\n"
-            f"Average score: {mem.average_score:.1f}/10"
+            f"Average score: {mem.average_score:.1f}/10\n"
+            f"Concepts the candidate mentioned: {self.candidate_mentions}"
         )
 
 

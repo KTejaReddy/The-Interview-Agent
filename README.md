@@ -1,83 +1,115 @@
 # AI Interview Agent
 
-A production-ready hackathon project that simulates an **experienced technical
-interviewer**. It interviews candidates conversationally — not a chatbot, not a
-quiz, not a RAG assistant. Questions are planned **before** the interview
-(minimum 8 questions across minimum 4 curriculum days), the difficulty ramps
-easy → medium → advanced, every answer influences the next question, and the
-session ends with **structured feedback** (`summary`, `strengths`, `gaps`,
-`next`).
+Build the interviewer, not the interview.
 
-The engine is driven entirely by three mandatory datasets that it **never
-modifies**:
+A production-ready hackathon project that simulates an **experienced
+technical interviewer**. It conducts a conversational technical interview
+based on a candidate's learning journey through the AI Cohort — not a
+chatbot, not a quiz, not a RAG assistant.
 
-| File                | Location                | Purpose                            |
-| ------------------- | ----------------------- | ---------------------------------- |
-| `curriculum.json`   | `backend/data/`         | The curriculum (days, topics, …)   |
-| `candidate.json`    | `backend/data/`         | Candidate records to interview     |
-| `technical-spec.md` | `backend/data/`         | The technical specification        |
+The engine:
 
-> **Important:** place your three dataset files in `backend/data/` before
-> starting. The application reads them read-only at startup; `GET /api/health`
-> reports whether each one loaded. The loaders are schema-tolerant — they
-> accept the common field spellings described in
-> [`backend/data/README.md`](backend/data/README.md) and adapt to **any**
-> candidate inside `candidate.json`.
+- plans every question **adaptively** — the next topic is scored from the
+  candidate's completed missions, attempts, struggles, engagement and the
+  conversation so far (never from uncompleted material),
+- enforces **8+ main questions across 4+ distinct curriculum days** as a
+  hard engine rule (never an LLM suggestion),
+- follows coherent **progression paths** (RAG path, agent path, production
+  path) through the candidate's own completed days,
+- asks **intelligent follow-ups** (deeper / simplify / recovery / probe),
+  detects "I don't know" deterministically, and never traps the candidate
+  on one topic,
+- prevents **semantic duplicates** with deterministic text-similarity
+  checks plus an LLM anti-duplication instruction,
+- remembers what the candidate said (**context retention**) and references
+  their own words later,
+- ends with **structured feedback** — exactly `summary`, `strengths`,
+  `gaps`, `next` per `technical-spec.md`.
+
+The project is driven entirely by three mandatory datasets that it
+**never modifies**:
+
+| File                | Accepted locations                          | Purpose                         |
+| ------------------- | ------------------------------------------- | ------------------------------- |
+| `curriculum.json`   | `backend/data/`, `backend/`, project root   | The 31-day curriculum           |
+| `candidates.json`   | `backend/data/`, `backend/`, project root   | Candidate records (also accepts `candidate.json`) |
+| `technical-spec.md` | `backend/data/`, `backend/`, project root   | The technical specification     |
+
+> **Datasets are immutable.** The application reads them read-only at
+> startup; `GET /api/health` reports whether each loaded. The loaders are
+> tolerant of the exact JSON shape (the official datasets ship with a
+> `member` / `missions` / `signals` structure and days without explicit
+> `topics` — both handled). `GET /api/health` reports dataset status.
 
 ---
 
 ## Features
 
-- ✅ Conversational interview via `POST /api/interview`
-- ✅ Minimum **8 questions** (configurable, default 12) across minimum **4
-  curriculum days** (default 6)
-- ✅ **Personalized** — question plan built from the candidate's missions,
-  attempts, passed/failed/skipped topics, signals, experience, education and
-  job role
-- ✅ **Follow-up questions** — good answers go deeper, weak answers are
-  simplified, wrong answers trigger recovery scaffolding
-- ✅ **Context memory** — full-session memory of questions, answers, topics,
-  difficulty, mistakes and strong answers
-- ✅ **Structured final feedback** — exactly `summary`, `strengths`, `gaps`,
-  `next` (score/confidence are computed internally but never exposed)
-- ✅ **sessionId**-based state, in-memory session store (no database)
-- ✅ Mixed question types: definition, conceptual, scenario, architecture,
-  debugging, tradeoffs, design, production, deployment, reasoning
-- ✅ Difficulty adaptation from the candidate profile (intern → basic,
-  senior → system design, many attempts → conceptual, skipped → introductory)
-- ✅ LLM abstraction layer — OpenAI-compatible (works with OpenAI, Gemini,
-  Groq, Together, Azure…), **no API key hardcoded**
-- ✅ Modern dark-theme React frontend with typing indicator, question counter,
-  progress bar, current-day badge, auto-scroll, session indicator, error
-  handling and loading animations
+- ✅ Conversational interview via `POST /api/interview` (exact
+  `technical-spec.md` contract: `reply` / `done` / `feedback`)
+- ✅ **8+ questions** and **4+ curriculum days** enforced by the engine —
+  the interview cannot end before both are met
+- ✅ **Personalized** — plan built from the candidate's completed missions,
+  attempts, passed/failed/skipped topics, cohort signals, experience,
+  education and job role
+- ✅ **Adaptive follow-ups** — good answers go deeper, weak answers are
+  simplified, wrong answers get recovery scaffolding, "I don't know" gets a
+  *different* simpler diagnostic
+- ✅ **Deterministic duplicate prevention** — token-set Jaccard checks against
+  every previous question + guaranteed-fresh fallback follow-ups
+- ✅ **Concise, evidence-driven length** — MIN 8 / target 8–10 / hard max 12
+  main questions; the interview finishes as soon as 8+ questions, 4+ days
+  and sufficient evidence are reached (never a 15–20 question marathon)
+- ✅ **Topic saturation** — max 2 main questions per day, at most one
+  follow-up per topic, repeated failures mark a topic weak and move on
+- ✅ **Context memory** — full-session memory plus candidate-mention tracking
+  so later questions can reference the candidate's own words
+- ✅ **Structured final feedback** — `summary`, `strengths`, `gaps`, `next`
+  (+ optional extended `score` for the UI ring; `confidence`/`topics_covered`
+  stay internal)
+- ✅ **sessionId**-based state (client-supplied per spec), in-memory session
+  store, TTL expiry
+- ✅ **SSE streaming** transport on the same endpoint (JSON default)
+- ✅ Mixed question types (definition → conceptual → scenario → architecture
+  → debugging → tradeoffs → design → production → deployment → reasoning)
+- ✅ **Prompt-injection guard** — candidate messages are sanitized and the
+  interviewer prompt treats them as untrusted data
+- ✅ LLM abstraction layer — OpenAI-compatible (OpenAI, Gemini, Groq,
+  Together, Azure…), model fallback + retries, **no API key hardcoded**
+- ✅ Modern dark-theme React frontend: candidate cards, typing indicator,
+  question counter, progress bar, **curriculum coverage tracker**, day
+  badge, auto-scroll, session indicator, **score ring** on the feedback page
 
 ---
 
 ## Architecture
 
 ```
-┌──────────────┐   POST /api/interview    ┌───────────────────────────────┐
-│   React SPA  │ ───────────────────────► │          FastAPI              │
-│  (Vite+TS)   │ ◄─────────────────────── │   ┌─────────────────────────┐ │
-└──────────────┘   JSON (sessionId state) │   │   api/  routes + deps   │ │
-                                          │   └───────────┬─────────────┘ │
-                                          │               ▼               │
-                                          │   ┌─────────────────────────┐ │
-                                          │   │    agents/               │ │
-                                          │   │  InterviewManager (SM)  │ │
-                                          │   │  CandidateAnalyzer      │ │
-                                          │   │  QuestionPlanner        │ │
-                                          │   │  ResponseEvaluator      │ │
-                                          │   │  FollowUpGenerator      │ │
-                                          │   │  FeedbackGenerator      │ │
-                                          │   └───┬───────┬───────┬─────┘ │
-                                          │       ▼       ▼       ▼       │
-                                          │  memory/  retrieval/  services│
-                                          │  (context (loaders & (LLM     │
-                                          │   memory)  retriever)  provider│
-                                          │  models/  schemas/  prompts/  │
-                                          └───────────────────────────────┘
-                          datasets: curriculum.json · candidate.json · technical-spec.md
+┌──────────────┐   POST /api/interview      ┌───────────────────────────────┐
+│   React SPA  │ ─────────────────────────► │          FastAPI              │
+│  (Vite+TS)   │ ◄───────────────────────── │   ┌─────────────────────────┐ │
+└──────────────┘  {reply, done} (+ SSE)     │   │  api/  routes + deps   │ │
+                                            │   └───────────┬─────────────┘ │
+                                            │               ▼               │
+                                            │   ┌─────────────────────────┐ │
+                                            │   │        agents/           │ │
+                                            │   │  InterviewManager (SM)  │ │
+                                            │   │  CandidateAnalyzer      │ │
+                                            │   │  QuestionPlanner (score)│ │
+                                            │   │  DuplicateGuard         │ │
+                                            │   │  DifficultyManager      │ │
+                                            │   │  ResponseEvaluator      │ │
+                                            │   │  FollowUpGenerator      │ │
+                                            │   │  FeedbackGenerator      │ │
+                                            │   └───┬───────┬───────┬─────┘ │
+                                            │       ▼       ▼       ▼       │
+                                            │  memory/  retrieval/  services│
+                                            │  (context (loaders & (LLM     │
+                                            │   memory)  retriever)  provider│
+                                            │  models/  schemas/  prompts/  │
+                                            │  utils/input_guard (security) │
+                                            └───────────────────────────────┘
+              datasets: curriculum.json · candidates.json · technical-spec.md
 ```
 
 ### State machine
@@ -87,27 +119,43 @@ START → INTRODUCTION → QUESTIONING → FOLLOW_UP → NEXT_TOPIC → …
        → FINAL_QUESTION → EVALUATION → FEEDBACK → DONE
 ```
 
-Each state transition is validated (`backend/models/interview_state.py`);
-illegal transitions raise a 409.
+Every transition is validated (`backend/models/interview_state.py`);
+illegal transitions raise a 409. Completion is a *hard engine decision* in
+`InterviewManager._should_terminate`: the interview only ends once
+`main_questions ≥ 8` **and** `distinct_days ≥ 4` are met **and** the
+assessment is reasonably settled — the soft target (10) is the usual
+finish line and an absolute safety cap (12) guarantees termination.  The
+interview never runs on simply because more topics are available.
+
+### Interview length policy
+
+| Setting                    | Value | Meaning                                     |
+| -------------------------- | ----- | ------------------------------------------- |
+| `INTERVIEW_MIN_QUESTIONS`  | 8     | Hard requirement (never below)              |
+| `INTERVIEW_TOTAL_QUESTIONS`| 10    | Soft target — usual finish line             |
+| `INTERVIEW_MAX_QUESTIONS`  | 12    | Absolute safety ceiling on main questions   |
+| `INTERVIEW_MIN_DAYS`       | 4     | Hard requirement (never below)              |
 
 ### Module map
 
 | Module                       | Responsibility                                                        |
 | ---------------------------- | --------------------------------------------------------------------- |
-| `agents/interview_manager`   | Orchestrator — drives the state machine for every candidate message   |
-| `agents/candidate_analyzer`  | Reads the raw candidate record → profile (strong/weak, difficulty…)   |
-| `agents/question_planner`    | Builds the plan skeleton before questions; generates question text    |
-| `agents/response_evaluator`  | Scores answers 0–10, picks verdict + next-move strategy               |
-| `agents/followup_generator`  | Writes the adaptive follow-up (deeper / simplify / recovery / probe)  |
-| `agents/feedback_generator`  | Produces final structured feedback                                    |
-| `retrieval/*`                | Loads the three datasets verbatim; retrieves curriculum for a day     |
+| `agents/interview_manager`   | Orchestrator — state machine, coverage gate, mentions memory          |
+| `agents/candidate_analyzer`  | Raw candidate → profile (strong/weak/failed/skipped, completed days)  |
+| `agents/question_planner`    | Scores the next topic; progression paths; saturation; dedup regen     |
+| `agents/duplicate_guard`     | Deterministic semantic-duplicate detection (Jaccard + cosine)         |
+| `agents/difficulty_manager`  | All difficulty decisions (baseline, ramp, follow-up strategy)         |
+| `agents/response_evaluator`  | Scores 0–10, verdict + strategy; deterministic "I don't know" rules   |
+| `agents/followup_generator`  | Adaptive follow-up + guaranteed-fresh fallback                        |
+| `agents/feedback_generator`  | Final structured feedback (evidence-based, per-topic assessments)     |
+| `retrieval/*`                | Loads the datasets verbatim; day-number lookup, modules, mentions     |
 | `memory/*`                   | Conversation memory + per-turn prompt context snapshots               |
-| `services/llm_service`       | LLM provider abstraction (OpenAI-compatible + deterministic mock)     |
-| `services/prompt_builder`    | Loads `prompts/*.md` and fills them; deterministic transition lines   |
+| `services/llm_service`       | Provider abstraction, model fallback, retries, structured JSON        |
+| `services/prompt_builder`    | Loads `prompts/*.md`; deterministic transition lines                  |
 | `services/session_manager`   | In-memory session store with TTL expiry                               |
-| `models/*`                   | State machine, session, plan, profile, enums                          |
-| `schemas/*`                  | API contract + Pydantic schemas for every structured LLM output       |
-| `prompts/*`                  | All prompt templates (persona, question, evaluate, follow-up, …)      |
+| `utils/input_guard`          | Prompt-injection / system-prompt-extraction sanitization              |
+| `models/*`                   | State machine, session, plan (assessments), profile, enums            |
+| `schemas/*`                  | API contract (spec-exact) + Pydantic schemas for LLM outputs          |
 
 ---
 
@@ -117,43 +165,34 @@ illegal transitions raise a 409.
 .
 ├── README.md
 ├── .env.example
-├── .gitignore
 ├── docker-compose.yml
+├── curriculum.json          # ← official datasets (read-only) — also
+├── candidates.json          #   accepted in backend/data/ or backend/
+├── technical-spec.md
 ├── backend/
-│   ├── main.py                 # FastAPI app, CORS, exception handlers, lifespan
-│   ├── config.py               # Environment configuration (python-dotenv)
+│   ├── main.py              # FastAPI app, CORS, exception handlers, lifespan
+│   ├── config.py            # Env config + dataset location resolution
 │   ├── requirements.txt
 │   ├── Dockerfile
-│   ├── .env.example
-│   ├── data/                   # ← drop curriculum.json, candidate.json,
-│   │   └── README.md           #   technical-spec.md here (read-only)
-│   ├── api/                    # routes (POST /api/interview …) + DI container
-│   ├── agents/                 # interview manager, analyzer, planner, …
-│   ├── prompts/                # prompt templates (markdown, separate)
-│   ├── memory/                 # conversation memory + context manager
-│   ├── retrieval/              # dataset loaders + curriculum retriever
-│   ├── models/                 # domain models, state machine, enums
-│   ├── schemas/                # Pydantic API + LLM schemas
-│   ├── services/               # LLM service, prompt builder, session manager
-│   ├── utils/                  # errors, logging
-│   └── tests/                  # pytest suite (fixture datasets in tests/fixtures)
+│   ├── data/                # drop copies of the three datasets here
+│   ├── api/                 # routes (POST /api/interview, SSE) + DI container
+│   ├── agents/              # manager, analyzer, planner, guard, evaluator, …
+│   ├── prompts/             # prompt templates (markdown, separate)
+│   ├── memory/              # conversation memory + context manager
+│   ├── retrieval/           # dataset loaders + curriculum retriever
+│   ├── models/              # domain models, state machine, enums
+│   ├── schemas/             # Pydantic API + LLM schemas
+│   ├── services/            # LLM service, prompt builder, session manager
+│   ├── utils/               # errors, logging, input guard
+│   ├── scripts/live_tests.py# live scenario harness (A–H)
+│   └── tests/               # pytest suite (real-shaped fixtures)
 └── frontend/
-    ├── package.json
-    ├── vite.config.ts          # dev proxy /api → http://localhost:8000
-    ├── tsconfig.json
-    ├── tailwind.config.js
-    ├── postcss.config.js
-    ├── index.html
-    ├── Dockerfile
-    ├── nginx.conf              # SPA serve + /api proxy for Docker
+    ├── package.json / vite.config.ts / tsconfig.json / tailwind.config.js
+    ├── Dockerfile / nginx.conf
     └── src/
-        ├── main.tsx / App.tsx / index.css
-        ├── types/              # API contract types
-        ├── services/           # typed fetch client
-        ├── context/            # React Context (global interview state)
-        ├── hooks/              # useAutoScroll, useTypingEffect
-        ├── components/         # ChatMessage, TypingIndicator, ProgressBar, …
-        └── pages/              # Landing, Interview, Feedback
+        ├── types/ services/ context/ hooks/
+        ├── components/      # ChatMessage, CoverageTracker, ScoreRing, …
+        └── pages/           # Landing, Interview, Feedback
 ```
 
 ---
@@ -162,8 +201,9 @@ illegal transitions raise a 409.
 
 ### 1. Datasets
 
-Copy `curriculum.json`, `candidate.json` and `technical-spec.md` into
-`backend/data/`.
+The three files may live in `backend/data/`, `backend/`, or the project
+root — the loaders find them at startup (root copies are used as-is,
+read-only).
 
 ### 2. Backend
 
@@ -176,8 +216,9 @@ cp .env.example .env        # then set LLM_API_KEY (or LLM_MOCK_MODE=true)
 uvicorn main:app --reload --port 8000
 ```
 
-> No API key yet? Set `LLM_MOCK_MODE=true` in `backend/.env` to run the full
-> flow with a deterministic offline provider — perfect for demos and tests.
+> No API key yet? Set `LLM_MOCK_MODE=true` in `backend/.env` to run the
+> full flow with a deterministic offline provider — perfect for demos and
+> tests.
 
 ### 3. Frontend
 
@@ -189,11 +230,12 @@ npm run dev                  # http://localhost:5173
 
 The Vite dev server proxies `/api` to `http://localhost:8000`.
 
-### 4. Tests
+### 4. Tests & live verification
 
 ```bash
 cd backend
-pytest                     # 24 tests, fully offline (mock LLM + fixtures)
+pytest                       # 82 tests, fully offline (mock LLM + fixtures)
+python scripts/live_tests.py # live scenarios A–H against the real datasets
 ```
 
 ---
@@ -214,29 +256,32 @@ docker compose up --build
 The backend talks to any **OpenAI-compatible** `/chat/completions` endpoint.
 Configure it via environment variables — **no key is ever hardcoded**:
 
-| Variable          | Example                                            | Meaning                    |
-| ----------------- | -------------------------------------------------- | -------------------------- |
-| `LLM_PROVIDER`    | `openai_compatible`                                | Provider identifier        |
-| `LLM_BASE_URL`    | `https://api.openai.com/v1`                        | Base URL of the endpoint   |
-| `LLM_MODEL`       | `gpt-4o-mini`                                      | Model name                 |
-| `LLM_API_KEY`     | *(empty until provisioned)*                        | Secret key                 |
-| `LLM_TEMPERATURE` | `0.7`                                              | Sampling temperature       |
-| `LLM_MAX_TOKENS`  | `800`                                              | Max completion tokens      |
-| `LLM_MOCK_MODE`   | `false`                                            | Offline demo provider      |
+| Variable             | Example                                     | Meaning                   |
+| -------------------- | ------------------------------------------- | ------------------------- |
+| `LLM_PROVIDER`       | `groq`                                      | Provider identifier       |
+| `GROQ_BASE_URL`      | `https://api.groq.com/openai/v1`            | Base URL (Groq default)   |
+| `GROQ_MODEL`         | `llama-3.3-70b-versatile`                   | Primary model             |
+| `LLM_FALLBACK_MODELS`| `groq/compound,openai/gpt-oss-20b,…`        | Fallback chain            |
+| `LLM_API_KEY`        | *(empty until provisioned)*                 | Secret key                |
+| `LLM_TEMPERATURE`    | `0.7`                                       | Sampling temperature      |
+| `LLM_MAX_TOKENS`     | `800`                                       | Max completion tokens     |
+| `LLM_MOCK_MODE`      | `false`                                     | Offline demo provider     |
+| `LLM_JSON_MODE`      | `true`                                      | Disable for Gemini-style  |
 
-**Google Gemini** exposes an OpenAI-compatible endpoint too — minimal changes:
+**Google Gemini** exposes an OpenAI-compatible endpoint too:
 
 ```ini
 LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
 LLM_MODEL=gemini-2.0-flash
 LLM_API_KEY=<your Gemini API key>
+LLM_JSON_MODE=false
 ```
 
 The provider abstraction lives in `backend/services/llm_service.py`
-(`LLMProvider` protocol). Adding another provider = implement one class.
-
-Every LLM call returns **structured JSON validated against a Pydantic schema**
-(`backend/schemas/llm.py`); malformed output is repaired once and retried.
+(`LLMProvider` protocol). Every LLM call returns **structured JSON
+validated against a Pydantic schema**; malformed output is repaired and
+retried, and failures fall back through the model chain without losing
+session state.
 
 ---
 
@@ -244,15 +289,15 @@ Every LLM call returns **structured JSON validated against a Pydantic schema**
 
 ### `POST /api/interview`
 
-The single conversational endpoint. Omit `sessionId` to start a new session.
+Exactly per `technical-spec.md`. Two request shapes:
 
-**Request**
+**1. Start interview** (first request — client supplies `sessionId` + the
+candidate object; the id is resolved against the authoritative dataset):
 
 ```json
 {
-  "candidateId": "candidate-1",
-  "message": "Hi, I'm ready to start.",
-  "sessionId": null
+  "sessionId": "abc-123",
+  "candidate": { "member": { "id": "CAND-001" } }
 }
 ```
 
@@ -260,77 +305,72 @@ The single conversational endpoint. Omit `sessionId` to start a new session.
 
 ```json
 {
-  "sessionId": "8f3c2a9e-1c4d-4f6a-9b0c-2e5a7d8f1b3a",
-  "state": "INTRODUCTION",
-  "message": "Welcome, Alex! I'm your interviewer today…",
-  "questionNumber": 0,
-  "totalQuestions": 12,
-  "currentDay": null,
-  "currentTopic": null,
-  "interviewComplete": false,
-  "feedback": null
-}
-```
-
-**Continue the session**
-
-```json
-{
-  "candidateId": "candidate-1",
-  "message": "I'm Alex, a junior Python developer working with REST APIs.",
-  "sessionId": "8f3c2a9e-1c4d-4f6a-9b0c-2e5a7d8f1b3a"
-}
-```
-
-```json
-{
-  "sessionId": "8f3c2a9e-1c4d-4f6a-9b0c-2e5a7d8f1b3a",
+  "reply": "Welcome, Sarah — thanks for making the time. I've been reviewing your journey through the AI Cohort…",
+  "done": false,
+  "sessionId": "abc-123",
   "state": "QUESTIONING",
-  "message": "Great, thanks Alex! Let's get started.\n…",
   "questionNumber": 1,
   "totalQuestions": 12,
-  "currentDay": "Python Fundamentals",
-  "currentTopic": "python-loops",
-  "interviewComplete": false,
-  "feedback": null
+  "currentDay": "Day 7 — Embeddings Explained",
+  "currentTopic": "Embeddings Explained"
 }
 ```
 
-**Final turn** — when the interview is done, `feedback` carries exactly the
-required fields:
+**2. Conversation turn** (every subsequent request):
 
 ```json
 {
-  "sessionId": "8f3c2a9e-1c4d-4f6a-9b0c-2e5a7d8f1b3a",
-  "state": "DONE",
-  "message": "Thank you, Alex — that's everything…",
-  "questionNumber": 12,
-  "totalQuestions": 12,
-  "currentDay": null,
-  "currentTopic": null,
-  "interviewComplete": true,
+  "sessionId": "abc-123",
+  "message": "Embeddings map tokens into vectors so similar meanings sit close together…"
+}
+```
+
+**Response** — `{ "reply": "...", "done": false }` plus the informative
+extras above.
+
+**3. End of interview** — `done: true` with structured feedback:
+
+```json
+{
+  "reply": "Thank you, Sarah — that's everything I had for you today…",
+  "done": true,
   "feedback": {
-    "summary": "Solid overall performance…",
-    "strengths": ["Clear explanations of core concepts"],
-    "gaps": ["Production deployment experience is limited"],
-    "next": ["Practice system design for the topics covered"]
+    "summary": "…",
+    "strengths": ["…"],
+    "gaps": ["…"],
+    "next": ["…"],
+    "score": 78
   }
 }
 ```
 
-> `score`, `confidence` and `topics_covered` are computed internally but are
-> **not** part of the API contract.
+> `score` is an **optional extended field** (powers the UI score ring) and
+> is omitted unless present. `confidence` and `topics_covered` are computed
+> internally and never exposed.
+
+**SSE streaming** — send `Accept: text/event-stream` to receive the same
+payload as events (`{"type":"phase",…}` then `{"type":"reply","payload":…}`).
+Plain JSON remains the default.
+
+**Frontend shorthand** — the bundled UI also sends
+`{ "candidateId": "CAND-001", "message": "…" }` to start (the id is
+resolved server-side from the dataset).
 
 ### `GET /api/interview/{sessionId}`
 
-Full session snapshot (transcript + state + feedback) — used to resume after
-a page refresh.
+Full session snapshot (transcript + state + feedback) — used to resume
+after a page refresh.
 
 ### `GET /api/candidates`
 
 ```json
 [
-  { "id": "candidate-1", "name": "Alex Doe", "role": "Junior Python Developer" }
+  {
+    "id": "CAND-001", "name": "Sarah Johnson", "role": "Senior Data Engineer",
+    "experience": 9, "education": "MS Computer Science",
+    "missionsCompleted": 9, "missionsFirstTry": 4, "struggles": 2,
+    "skipped": 1, "failed": 0
+  }
 ]
 ```
 
@@ -340,11 +380,11 @@ a page refresh.
 {
   "status": "ok",
   "app": "AI Interview Agent",
-  "curriculumDays": 6,
-  "candidates": 2,
+  "curriculumDays": 31,
+  "candidates": 20,
   "specLoaded": true,
-  "llmConfigured": false,
-  "mockMode": true,
+  "llmConfigured": true,
+  "mockMode": false,
   "datasetsError": null
 }
 ```
@@ -353,43 +393,149 @@ a page refresh.
 
 ## Error handling
 
-| Condition                  | Status | `detail.code`             |
-| -------------------------- | ------ | ------------------------- |
-| Unknown `candidateId`      | 404    | `candidate_not_found`     |
-| Unknown / expired `sessionId` | 404 / 410 | `session_not_found` / `session_expired` |
-| Missing datasets           | 503    | `curriculum_unavailable` / `datasets_unavailable` |
-| No LLM configured          | 503    | `llm_not_configured`      |
-| LLM failure / bad output   | 502    | `llm_error`               |
-| Illegal state transition   | 409    | `invalid_state_transition` |
-| Malformed request body     | 400    | `malformed_request`       |
+| Condition                    | Status | `detail.code`                     |
+| ---------------------------- | ------ | --------------------------------- |
+| Unknown candidate            | 404    | `candidate_not_found`             |
+| Unknown session              | 404    | `session_not_found`               |
+| Expired session              | 410    | `session_expired`                 |
+| Missing datasets             | 503    | `curriculum_unavailable` / `datasets_unavailable` |
+| No LLM configured            | 503    | `llm_not_configured`              |
+| LLM failure / bad output     | 502    | `llm_error`                       |
+| Candidate/session mismatch   | 409    | `session_candidate_mismatch`      |
+| Illegal state transition     | 409    | `invalid_state_transition`        |
+| Malformed / ambiguous body   | 400    | `malformed_request`               |
 
 All errors share the envelope `{ "detail": { "code", "message", … } }`.
+Validation errors return a clean 400 with field details.
+
+---
+
+## Interview intelligence
+
+- **Candidate intelligence** — `candidate_analyzer` derives strong topics
+  (passed ≤ 2 attempts), struggled topics (passed but ≥ 3 attempts, probed
+  mid-interview), failed topics and skipped topics (both treated as *not
+  demonstrated knowledge*), completed days (the only question pool),
+  engagement and confidence from cohort signals.
+- **Curriculum intelligence** — `curriculum_retriever` maps day numbers,
+  modules and adjacency; `ground_context` grounds every question in the
+  day's own objectives/tools; nothing is ever invented.
+- **QuestionIntent — assess concepts, not course titles** — for every
+  question the planner selects one real **learning objective** (never
+  reused on the same day), derives a technical **concept** from it
+  (`utils/concepts.py`: "Understand how text is converted into vector
+  embeddings" → *how text is converted into vector embeddings*; "Create a
+  /chat API endpoint…" → *how to create a /chat API endpoint…*), and packs
+  objective + concept + cognitive level + purpose + evidence bar into a
+  structured `QuestionIntent`. The LLM only translates that intent into
+  natural interviewer language. Questions like "What is 'Embeddings
+  Explained'?" are structurally impossible.
+- **Adaptive planning** — `question_planner` scores every completed day by
+  candidate relevance + module coherence + coverage need − saturation −
+  failure penalty, producing RAG/agent/production progression paths.
+- **Deepen after coverage** — before the 4-day minimum is met, uncovered
+  days are strongly prioritised; once it is met, the *current* day and its
+  neighbours win so the interview collects depth instead of day-count
+  (a 13-question / 8-day hop-fest is structurally impossible).
+- **Coverage enforcement** — `_should_terminate` refuses to end until
+  8+ main questions AND 4+ distinct days; the planner prioritizes new days
+  when coverage is low, then deepens (max 2 mains per day) so interviews
+  stay in the 4–6 day / 8–10 question band instead of hopping to a new day
+  every question.
+- **Evidence-based completion** — once the minimums are met, the interview
+  ends when the soft budget is reached **or** every touched topic has a
+  settled assessment (no open failures, no bare claims, no unknowns), so a
+  decisive strong interview is not artificially extended — and an absolute
+  safety cap guarantees termination.
+- **Evidence-based evaluation** — the evaluator never treats surface
+  phrases as competence:
+  - "I don't know" → deterministic weak/simplify (never rewarded),
+  - greetings / filler ("hello", "yes", "okay") → non-answers: one short
+    simpler recovery, never a lecture about why they didn't answer,
+  - "I know" with no substance → `verify`: the interviewer asks for a
+    concrete demonstration from the objective instead of scoring the claim
+    (a claim always gets its one verification probe; a second claim marks
+    the topic `insufficient_evidence` and moves on),
+  - **failure ladder** on one topic — max **two attempts**: first
+    struggle → a *different*, simpler diagnostic; second struggle (or a
+    wrong answer, which gets one scaffolding probe) → topic marked weak
+    and the interviewer moves on (never traps, never 5–6 questions on one
+    concept).
+- **Follow-up intelligence** — follow-ups are grounded in the question's
+  concept/objective, reference what the candidate just said, and are
+  checked against every earlier question; a guaranteed-fresh deterministic
+  fallback exists when the LLM repeats itself. Fallbacks are
+  **phrase-form safe** — activity-style templates use the gerund action
+  phrase ("creating a /chat API endpoint…"), explanation-style ones the
+  "how …" concept — so a template can never produce "How does how to build
+  X fit…?" or "the core job of how to create X", and they rotate angles
+  instead of repeating a main → example → mistake bundle.
+- **Human conversational tone** — the system prompt, question and
+  follow-up prompts enforce: ONE focused question per turn (never multi-
+  part "and and and" questions), short spoken phrasing, brief *varied*
+  acknowledgements (never "Glad to hear it…", "Let's make sure we're on
+  the same page…" on repeat), no long commentary on non-answers, no
+  over-use of the healthcare/capstone framing, and no mention-prefix spam
+  ("You mentioned X earlier") on every question.
+- **Duplicate prevention** — token-set Jaccard + cosine checks against all
+  previous questions; flagged questions are regenerated with a rotated
+  learning objective first, then a changed cognitive task.
+- **Context retention** — the candidate's own mentions (tools, day titles)
+  are recorded and surfaced to later question prompts so the interviewer
+  can build on their words.
+- **Evidence-based feedback** — strengths come only from topics the
+  candidate demonstrably scored well on; gaps are phrased as "Did not
+  demonstrate sufficient understanding of X during the interview"; bare
+  claims and profile signals are never cited as strengths; psychology is
+  never diagnosed. `topics_covered` is **always the authoritative session
+  state** (never reconstructed from generated text), so feedback can never
+  report fewer topics than the transcript covered.
+- **Consistent counters** — the reported question number never exceeds the
+  total, so the UI can never show a contradictory "13 of 12"; the feedback
+  hero reports "13 questions · 8 curriculum days" instead.
+
+---
+
+## Live test harness
+
+`backend/scripts/live_tests.py` runs the required scenarios against the
+real datasets and prints a pass/fail report:
+
+| Scenario | What it verifies                                             |
+| -------- | ------------------------------------------------------------ |
+| A        | Repeated "I don't know" → topic moves, 8+ Qs, 4+ days, no duplicates, gaps reported |
+| B        | Strong answers → deeper follow-ups, completes                 |
+| C        | Mixed performance → adaptive behaviour                        |
+| D        | Context retention (mentions recorded)                         |
+| E        | Personalization (distinct interviews per candidate)           |
+| H        | API contract status codes (400/404/409/200, reply+done)       |
+
+```bash
+cd backend
+python scripts/live_tests.py                  # in-process, mock LLM
+python scripts/live_tests.py --url http://127.0.0.1:8000   # against live server
+```
 
 ---
 
 ## Design decisions
 
-- **Plan first, text on demand** — the plan skeleton (days, topics, question
-  types, difficulty ramp) is computed instantly at session start; only the
-  question wording is LLM-generated when the question is asked, keeping
-  per-turn latency to 1–2 LLM calls.
-- **LLM always outputs JSON** — every prompt requests a single JSON object
-  validated by Pydantic; no raw-text parsing anywhere.
-- **Deterministic transitions** — intro, topic bridges and wrap-up lines are
-  templated (no LLM), while evaluation, follow-ups, question wording and
-  feedback are LLM-generated.
-- **Schema-tolerant datasets** — the loaders accept common field spellings
-  and degrade gracefully, so the project adapts to whatever your three files
-  actually contain without touching them.
-- **In-memory state** — sessions live in `SessionManager` with TTL expiry; no
-  database, per the requirements.
-
-## Roadmap ideas
-
-- Streaming tokens from the provider to the chat UI
-- Persistent session store (SQLite/Redis) behind the `SessionManager` interface
-- Multi-provider fallback and token/cost tracking
-- Export feedback as PDF/markdown
+- **Plan scored on demand, text generated on demand** — topic selection is
+  deterministic application logic (testable, never hallucinated); only the
+  question wording is LLM-generated.
+- **Structured state over parsed text** — the reference implementation
+  parsed "Day X" and `[INTERVIEW_COMPLETE]` out of generated prose; this
+  engine keeps every decision in typed state (plan, assessments, counters).
+- **LLM always outputs JSON** — validated by Pydantic; no raw-text parsing.
+- **Deterministic transitions** — intro, bridges, wrap-up are templated;
+  evaluation, follow-ups, question wording and feedback are LLM-generated.
+- **Hard minimums** — 8 questions / 4 days are enforced by the state
+  machine, not by a prompt instruction.
+- **Schema-tolerant datasets** — the loaders accept the official
+  `member`/`missions`/`signals` shape and common variants without touching
+  the files.
+- **In-memory state** — sessions live in `SessionManager` with TTL expiry;
+  no database, per the requirements.
 
 ---
 

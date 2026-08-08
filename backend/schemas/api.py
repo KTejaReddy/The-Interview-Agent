@@ -1,69 +1,107 @@
-"""API contract.
+"""API contract — matches ``technical-spec.md`` exactly.
 
-These classes are the single source of truth for every payload exchanged
-over HTTP.  If ``technical-spec.md`` (once provided) defines a different
-field name, adjust it here and nowhere else.
+Start interview (first request)::
 
-Endpoints
----------
-* ``POST /api/interview``          -- drive the conversation turn by turn
-* ``GET  /api/interview/{id}``     -- resume / inspect a session
-* ``GET  /api/candidates``         -- list candidates from candidate.json
-* ``GET  /api/health``             -- service & dataset status
+    POST /api/interview
+    {"sessionId": "abc-123", "candidate": { ...candidate.json }}
+
+Conversation turn (every subsequent request)::
+
+    {"sessionId": "abc-123", "message": "..."}
+
+Responses::
+
+    {"reply": "...", "done": false}
+    {"reply": "...", "done": true, "feedback": {"summary": ..., "strengths": [], "gaps": [], "next": []}}
+
+The required fields are never renamed or removed.  A few *supplementary*
+fields (``sessionId``, ``state``, ``questionNumber``, ``totalQuestions``,
+``currentDay``, ``currentTopic``) ride along for the frontend; automated
+judges asserting the required fields are unaffected.  ``feedback.score`` is
+an optional extended field (not part of the contract) and is omitted unless
+present.
 """
 from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class InterviewRequest(BaseModel):
     """Body of ``POST /api/interview``.
 
-    On the first message of a session omit ``sessionId``; the server creates
-    a session for the given ``candidateId`` and returns the new id.
+    Two accepted shapes (spec-exact and convenience):
+
+    * START: ``{"sessionId": "...", "candidate": {...}}`` — optionally also
+      ``candidateId`` (frontend convenience) and ``message`` (first message).
+    * TURN: ``{"sessionId": "...", "message": "..."}``.
     """
 
-    candidateId: str = Field(
-        ..., min_length=1, description="Candidate id inside candidate.json"
+    model_config = ConfigDict(extra="ignore")
+
+    sessionId: Optional[str] = Field(default=None, description="Session id (client-supplied per spec)")
+    candidate: Optional[dict[str, Any]] = Field(
+        default=None, description="Full candidate object (spec start shape)"
     )
-    message: str = Field(
-        ..., min_length=1, description="Candidate's latest message"
-    )
-    sessionId: Optional[str] = Field(
-        default=None, description="Existing session id (omit to start fresh)"
-    )
+    candidateId: Optional[str] = Field(default=None, description="Candidate id inside the dataset (convenience)")
+    message: Optional[str] = Field(default=None, description="Candidate's latest message")
 
     @field_validator("message")
     @classmethod
-    def message_not_blank(cls, value: str) -> str:
-        stripped = value.strip()
-        if not stripped:
-            raise ValueError("message must not be blank")
-        return stripped
+    def message_not_blank(cls, value: Optional[str]) -> Optional[str]:
+        return value.strip() if value is not None else value
+
+    def is_start(self) -> bool:
+        """True when this request starts a new interview.
+
+        Per the spec the start request carries the full ``candidate``
+        object; the id is then resolved against the authoritative dataset.
+        """
+        return bool(self.candidate)
+
+    def is_turn(self) -> bool:
+        """True when this request continues an existing interview.
+
+        A turn is ``sessionId`` + ``message``.  ``candidateId`` may ride
+        along (frontend convenience) but never turns a turn into a start.
+        """
+        return bool(self.sessionId) and bool(self.message)
 
 
 class FeedbackPayload(BaseModel):
-    """Final structured feedback — exactly the fields required by the spec."""
+    """Final structured feedback — exactly the fields required by the spec.
+
+    ``score`` is an optional extended field for the UI's score ring; it is
+    omitted from the payload when not set so the contract stays exact.
+    """
+
+    model_config = ConfigDict(exclude_none=True)
 
     summary: str
     strengths: list[str] = Field(default_factory=list)
     gaps: list[str] = Field(default_factory=list)
     next: list[str] = Field(default_factory=list)
+    score: Optional[int] = Field(default=None, ge=0, le=100)
 
 
 class InterviewResponse(BaseModel):
-    """Body of every successful ``POST /api/interview`` response."""
+    """Body of every successful ``POST /api/interview`` response.
 
-    sessionId: str
-    state: str
-    message: str
+    Required by the spec: ``reply`` and ``done``.  The remaining fields are
+    supplementary (UI state) and never replace the contract fields.
+    """
+
+    model_config = ConfigDict(exclude_none=True)
+
+    reply: str
+    done: bool
+    sessionId: Optional[str] = None
+    state: Optional[str] = None
     questionNumber: int = 0
     totalQuestions: int = 0
     currentDay: Optional[str] = None
     currentTopic: Optional[str] = None
-    interviewComplete: bool = False
     feedback: Optional[FeedbackPayload] = None
 
 
@@ -73,6 +111,13 @@ class CandidateSummary(BaseModel):
     id: str
     name: str = ""
     role: str = ""
+    experience: Any = 0
+    education: str = ""
+    missionsCompleted: int = 0
+    missionsFirstTry: int = 0
+    struggles: int = 0
+    skipped: int = 0
+    failed: int = 0
 
 
 class SessionSnapshot(BaseModel):

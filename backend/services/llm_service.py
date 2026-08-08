@@ -150,65 +150,415 @@ class MockProvider(LLMProvider):
         timeout: float,
     ) -> str:
         combined = f"{system}\n{user}"
-        topic = "this topic"
+        topic = self._topic_from(user)
+
+        if "Generate ONE interview question" in combined:
+            return json.dumps(self._mock_question(user, topic))
+        if "Evaluate the candidate" in combined:
+            return json.dumps(self._mock_evaluation(user, topic))
+        if "Follow-up strategy" in combined:
+            return json.dumps(self._mock_follow_up(user, topic))
+        if "The interview is finished" in combined:
+            return json.dumps(self._mock_feedback(user))
+        raise LLMError("Mock provider received an unknown prompt type.")
+
+    @staticmethod
+    def _field(user: str, pattern: str) -> str:
+        match = re.search(pattern, user, re.MULTILINE)
+        return match.group(1).strip() if match else ""
+
+    @staticmethod
+    def _topic_from(user: str) -> str:
         topic_match = re.search(r"^- Topic: (.+)$", user, re.MULTILINE)
         if not topic_match:
             topic_match = re.search(r"TOPICS: (.+)", user)
         if topic_match:
-            topic = topic_match.group(1).strip().splitlines()[0]
+            return topic_match.group(1).strip().splitlines()[0]
+        return "this topic"
 
-        if "Generate ONE interview question" in combined:
-            return json.dumps(
-                {
-                    "question": f"Let's talk about {topic}. Explain the core idea "
-                    "behind it and one real-world trade-off you'd need to manage.",
-                    "topic": topic,
-                    "intent": "Establish understanding of the topic.",
-                    "question_type": "conceptual",
-                }
+    def _concept_from(self, user: str) -> str:
+        """Technical concept derived from the curriculum objective (the mock
+        questions ask about the concept, never the day title)."""
+        concept = self._field(user, r"^- Technical concept: (.+)$")
+        if not concept:
+            concept = self._field(user, r"^- Topic: (.+)$")
+        return concept or "this concept"
+
+    def _objective_from(self, user: str) -> str:
+        return self._field(user, r"^- Learning objective: (.+)$")
+
+    #: Recognizable misconception phrases.  A negation inside the 10 chars
+    #: before the marker ("I wouldn't use LIKE...", "rather than...") means
+    #: the candidate is *criticising* the misconception, not holding it.
+    _MISCONCEPTION_MARKERS = (
+        re.compile(r"(?:store[sd]?|storing)\s+the\s+original\s+text", re.I),
+        re.compile(r"store[sd]?\s+the\s+text\s+itself", re.I),
+        re.compile(r"\b(?:just\s+)?(?:use|using)\s+(?:a\s+)?sql\s+like\b", re.I),
+        re.compile(r"\blike\s+query\s+(?:on|against)\s+the\s+raw\s+text", re.I),
+        re.compile(r"\bthe\s+model\s+remembers\s+everything\b", re.I),
+        re.compile(r"\bembeddings?\s+(?:are|is)\s+the\s+(?:words|documents?)\s+themselves", re.I),
+        re.compile(r"\bno\s+(?:need\s+for\s+a\s+)?vector\s+database\s+needed\b", re.I),
+        re.compile(r"\bsearch\s+is\s+just\s+keyword\s+(?:search|matching)\b", re.I),
+    )
+    _NEGATION_HINT = re.compile(
+        r"\b(?:not|no|never|avoid|without|wouldn'?t|don'?t|shouldn'?t|couldn'?t|rather than|instead of|unlike)\b",
+        re.I,
+    )
+
+    @classmethod
+    def _detects_misconception(cls, answer: str) -> bool:
+        """True when the answer asserts one of a small set of recognizable
+        technical misconceptions (deterministic stand-in for the real LLM's
+        correctness judgement in mock mode)."""
+        if not answer:
+            return False
+        for pattern in cls._MISCONCEPTION_MARKERS:
+            for match in pattern.finditer(answer):
+                window = answer[max(0, match.start() - 10): match.start()]
+                if not cls._NEGATION_HINT.search(window):
+                    return True
+        return False
+
+    @staticmethod
+    def _field_block(user: str, start: str, end: str) -> str:
+        """Text between two section markers (each matched at line start)."""
+        pattern = re.compile(
+            re.escape(start) + r"\s*\n(.*?)\n\s*" + re.escape(end),
+            re.DOTALL,
+        )
+        match = pattern.search(user)
+        return match.group(1).strip() if match else ""
+
+    def _mock_feedback(self, user: str) -> dict[str, Any]:
+        """Evidence-based mock feedback: derived from the actual transcript
+        and per-topic assessment state in the prompt, never a canned
+        paragraph.  Strengths come from topics with demonstrated good
+        scores, gaps from topics with repeated failures / low confidence,
+        and the score from the actual answer scores."""
+        assessment_block = self._field_block(
+            user,
+            "ASSESSMENT STATE (per-topic, derived from the actual interview)",
+            "PROFILE TOPICS NOT TESTED",
+        )
+        topics: list[tuple[str, str, int, int, int]] = []
+        for line in assessment_block.splitlines():
+            # knowledge_status is the authoritative per-topic verdict.
+            match = re.match(
+                r"^- (.+?): knowledge_status=(\w+), confidence=(\w+), "
+                r"failures=(\d+), bare_claims=(\d+), "
+                r"score range (\d+)-(\d+)/10",
+                line.strip(),
             )
-        if "Evaluate the candidate" in combined:
-            return json.dumps(
-                {
-                    "score": 7,
-                    "verdict": "good",
-                    "follow_up": "next_topic",
-                    "mastered_topic": True,
-                    "notes": "Mock provider: reasonable, on-topic answer.",
-                }
+            if match:
+                topics.append(
+                    (
+                        match.group(1),
+                        match.group(2),  # knowledge_status
+                        int(match.group(4)),  # failures
+                        int(match.group(6)),  # worst
+                        int(match.group(7)),  # best
+                    )
+                )
+
+        transcript = self._field_block(user, "FULL INTERVIEW TRANSCRIPT", "CANDIDATE PROFILE")
+        scores = re.findall(r"score=(\d+)/10 verdict=(\w+)", transcript)
+        avg = sum(int(s) for s, _ in scores) / max(1, len(scores)) if scores else 0.0
+
+        # Defensive: if the assessment block could not be parsed, recover
+        # the covered topics straight from the transcript's own topic lines
+        # (the feedback must never report 0 topics when topics were asked).
+        if not topics:
+            topic_lines = re.findall(r"^\[Q\d+.*?\] (.+)$", transcript, re.MULTILINE)
+            topics = [
+                (topic, "unknown", 0, 0, 0)
+                for topic in dict.fromkeys(topic_lines)
+            ]
+
+        strong_topics = [
+            t for t, status, _f, _w, b in topics
+            if status == "demonstrated" or (status == "partially_demonstrated" and b >= 7)
+        ]
+        weak_topics = [
+            t for t, status, f, _w, b in topics
+            if status in ("insufficient_evidence", "incorrect", "unknown")
+            or f >= 2 or b <= 4
+        ]
+        covered = len(topics)
+
+        strengths = [
+            f"Showed a working understanding of {t} when explaining it during the interview"
+            for t in strong_topics
+        ] or ["Engaged with every question the interviewer asked"]
+        gaps = [
+            f"Did not demonstrate sufficient understanding of {t} during the interview"
+            for t in weak_topics
+        ] or ["Deeper exploration of the concepts covered would be valuable"]
+        next_steps = [
+            f"Review the curriculum material and exercises for {t}"
+            for t in (weak_topics[:2] or strong_topics[:1] or ["the topics covered"])
+        ]
+        score = int(
+            round(min(100.0, max(0.0, avg * 8.0 + min(20.0, covered * 2.5))))
+        )
+        summary = (
+            f"The interview covered {covered} curriculum topics with an average "
+            f"answer score of {avg:.1f}/10."
+            + (
+                f" Strongest areas: {', '.join(strong_topics[:3])}."
+                if strong_topics
+                else " Most answers did not demonstrate the underlying concepts."
             )
-        if "Follow-up strategy" in combined:
-            return json.dumps(
-                {
-                    "question": f"Interesting — and could you explain how you'd "
-                    f"approach '{topic}' if a team depended on it in production?",
-                    "intent": "Probe depth on the current topic.",
-                    "difficulty": "medium",
-                }
-            )
-        if "The interview is finished" in combined:
-            return json.dumps(
-                {
-                    "summary": "Solid overall performance with good coverage of "
-                    "the core topics and room to deepen production experience.",
-                    "strengths": [
-                        "Clear explanations of core concepts",
-                        "Good structured approach to design questions",
-                    ],
-                    "gaps": [
-                        "Production deployment experience is limited",
-                        "Some trade-off analysis was shallow",
-                    ],
-                    "next": [
-                        "Practice system design for the topics covered",
-                        "Review deployment and debugging scenarios",
-                    ],
-                    "score": 72,
-                    "confidence": 0.7,
-                    "topics_covered": [topic],
-                }
-            )
-        raise LLMError("Mock provider received an unknown prompt type.")
+        )
+        return {
+            "summary": summary,
+            "strengths": strengths[:4],
+            "gaps": gaps[:4],
+            "next": next_steps[:4],
+            "score": score,
+            "confidence": round(max(0.0, min(1.0, avg / 10.0)), 2),
+            "topics_covered": [t for t, _c, _f, _w, _b in topics],
+        }
+
+    @staticmethod
+    def _answer_from(user: str) -> str:
+        match = re.search(
+            r"CANDIDATE'S ANSWER\n(.*?)\n\n(?:CANDIDATE PROFILE|EVALUATION)",
+            user,
+            re.DOTALL,
+        )
+        return match.group(1).strip() if match else ""
+
+    def _mock_question(self, user: str, topic: str) -> dict[str, Any]:
+        """Concept-grounded question text for each cognitive task.  The
+        concept comes from the curriculum's own learning objective, so the
+        mock never produces \"What is <Day title>?\" questions.  Questions
+        stay short and conversational (one idea, no multi-part phrasing)
+        and never open with a repetitive \"You mentioned X earlier\" prefix
+        — the real LLM still receives the mentions and may use them
+        naturally, but the mock does not force them onto every question."""
+        from utils.concepts import action_phrase_from_objective
+
+        concept = self._concept_from(user)
+        objective = self._objective_from(user)
+        action = action_phrase_from_objective(objective) if objective else concept
+        type_match = re.search(r"- Question type: (\w+)", user)
+        qtype = type_match.group(1) if type_match else "conceptual"
+        position = re.search(r"question (\d+) of", user)
+        n = int(position.group(1)) if position else 0
+
+        # Rotate phrasings so consecutive questions on the same day still
+        # read differently.
+        conceptual_variants = (
+            f"Can you explain {concept} — and why it matters?",
+            f"Walk me through {concept}: what are the key decisions?",
+            f"How would you explain {concept} to a teammate who just joined?",
+        )
+        templates = {
+            "definition": f"In your own words, can you walk me through {concept}?",
+            "conceptual": conceptual_variants[n % len(conceptual_variants)],
+            "scenario": (
+                f"Let's make it concrete: the team is tasked with {action}. "
+                f"How would you approach it?"
+            ),
+            "architecture": (
+                f"Where does the responsibility for {action} sit in the "
+                f"architecture, and why?"
+            ),
+            "debugging": (
+                f"A teammate reports issues with {action} in production. "
+                f"What's your first diagnostic step?"
+            ),
+            "tradeoffs": (
+                f"What are the main trade-offs involved in {action} in a real "
+                f"system?"
+            ),
+            "design": (
+                f"If you had to build a small feature around {action}, what "
+                f"would you sketch first?"
+            ),
+            "production": (
+                f"If your team relied on {action} in production, what would "
+                f"you monitor?"
+            ),
+            "deployment": (
+                f"How would you ship a change involving {action} and roll it "
+                f"back safely?"
+            ),
+            "reasoning": (
+                f"When is {action} worth the effort, and when would you avoid "
+                f"it?"
+            ),
+        }
+        question = templates.get(qtype, templates["conceptual"])
+
+        return {
+            "question": question,
+            "topic": topic,
+            "intent": f"Assess the learning objective behind '{concept}'.",
+            "question_type": qtype,
+        }
+
+    def _mock_follow_up(self, user: str, topic: str) -> dict[str, Any]:
+        """Strategy-aware, evidence-grounded follow-ups.  Deep follow-ups
+        ESCALATE the cognitive level as follow-up count grows (application →
+        trade-off → architecture/production) instead of cycling a fixed set,
+        so strong candidates get a ladder, never a main→example→mistake
+        bundle.  Activity-style templates use the gerund action phrase and
+        explanation-style ones the "how …" concept — so a template can never
+        produce "How does how to build X fit…?"."""
+        from utils.concepts import action_phrase_from_objective
+
+        strategy_match = re.search(r"- Follow-up strategy: (\w+)", user)
+        strategy = strategy_match.group(1) if strategy_match else "deeper"
+        concept = self._concept_from(user)
+        objective = self._objective_from(user)
+        action = (
+            action_phrase_from_objective(objective)
+            if objective
+            else concept
+        )
+        answer = self._answer_from(user)
+        snippet = " ".join(answer.split()[:8])
+        # Follow-ups so far on this topic drive the cognitive escalation.
+        count_match = re.search(r"- Follow-ups so far on this topic: (\d+)", user)
+        count = int(count_match.group(1)) if count_match else 0
+
+        # Short, rotating acknowledgements so the same stock phrase is never
+        # repeated ("Glad to hear it…", "No problem — let's ground this
+        # differently…" are banned).
+        openers = {
+            "deeper": (
+                "Good — let's go one level deeper. ",
+                "Right. Let's push on that. ",
+                "Exactly. Next angle: ",
+            ),
+            "simplify": (
+                "Let's try a simpler angle. ",
+                "Okay, let's come at it from the basics. ",
+                "Let's make this easier. ",
+            ),
+            "recovery": (
+                "Let's step back for a second. ",
+                "Let's approach it differently. ",
+            ),
+            "verify": (
+                "Alright, let's test that. ",
+                "Good — let's see it in action. ",
+                "Okay, let's make it concrete. ",
+            ),
+            "probe": ("", ""),
+        }
+        opener = openers.get(strategy, openers["deeper"])[count % len(openers.get(strategy, openers["deeper"]))]
+
+        # Escalating ladder for strong answers (never repeats an angle).
+        deeper_ladder = (
+            f"Suppose {action} had to be production-ready next month — what's "
+            f"the first thing you'd verify?",
+            f"What trade-off would you weigh between {action} and a simpler "
+            f"alternative in a real system?",
+            f"Where does {action} sit in the architecture, and what would you "
+            f"monitor in production?",
+        )
+
+        templates = {
+            "deeper": opener + deeper_ladder[min(count, len(deeper_ladder) - 1)],
+            "simplify": opener + f"In one sentence, what's the core job of {action}?",
+            "recovery": opener + f"How would you explain {concept} to a junior teammate?",
+            "verify": opener + f"Walk me through {concept} with a concrete example.",
+            "probe": f"You said \"{snippet}\" — could you expand on that?",
+        }
+        return {
+            "question": templates.get(strategy, templates["deeper"]),
+            "intent": (
+                f"Follow up ({strategy}) on '{concept}' — "
+                f"follow-up #{count + 1} on this topic."
+            ),
+            "difficulty": (
+                "easy"
+                if strategy in ("simplify", "recovery")
+                else "medium"
+            ),
+        }
+
+    def _mock_evaluation(self, user: str, topic: str) -> dict[str, Any]:
+        """Answer-aware evaluation: IDK and bare knowledge claims are never
+        treated as competence; recognizable misconceptions are marked wrong;
+        otherwise longer, substantive answers score higher.  This keeps the
+        mock deterministic while exercising the same adaptive behaviour as
+        the real evaluator."""
+        from utils.answer_signals import (
+            detects_claim_without_evidence,
+            detects_greeting,
+            detects_idk,
+        )
+
+        answer = self._answer_from(user)
+
+        if detects_idk(answer):
+            return {
+                "score": 2,
+                "verdict": "weak",
+                "follow_up": "simplify",
+                "mastered_topic": False,
+                "notes": "No substantive answer given.",
+            }
+        if detects_greeting(answer):
+            return {
+                "score": 2,
+                "verdict": "weak",
+                "follow_up": "simplify",
+                "mastered_topic": False,
+                "notes": "Greeting/non-answer given.",
+            }
+        if detects_claim_without_evidence(answer):
+            return {
+                "score": 4,
+                "verdict": "unclear",
+                "follow_up": "verify",
+                "mastered_topic": False,
+                "notes": "Asserted knowledge without demonstrating it.",
+            }
+        if self._detects_misconception(answer):
+            return {
+                "score": 2,
+                "verdict": "wrong",
+                "follow_up": "recovery",
+                "mastered_topic": False,
+                "notes": "The answer contains a recognizable misconception — probe it.",
+            }
+
+        length = len(answer)
+        if length >= 240:
+            return {
+                "score": 9,
+                "verdict": "excellent",
+                "follow_up": "deeper",
+                "mastered_topic": True,
+                "notes": "Detailed, well-structured answer.",
+            }
+        if length >= 120:
+            return {
+                "score": 8,
+                "verdict": "good",
+                "follow_up": "deeper" if "trade" in answer.lower() else "next_topic",
+                "mastered_topic": True,
+                "notes": "Solid, on-topic answer.",
+            }
+        if length >= 60:
+            return {
+                "score": 6,
+                "verdict": "good",
+                "follow_up": "probe",
+                "mastered_topic": False,
+                "notes": "Correct but shallow — probe for depth.",
+            }
+        return {
+            "score": 3,
+            "verdict": "weak",
+            "follow_up": "simplify",
+            "mastered_topic": False,
+            "notes": "Short or non-committal answer.",
+        }
 
 
 class LLMService:
