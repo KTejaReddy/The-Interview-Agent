@@ -1021,11 +1021,11 @@ class LLMService:
             reserved = self._health.reserve_capacity(model, est_total_tokens)
             if not reserved:
                 if self._health.get(model).healthy:
-                    if model != candidates[-1]:
+                    if not self._health.has_capacity_for(model, est_input_tokens):
                         logger.info(
-                            "Quota-aware skip: %s is near its quota limit "
-                            "(~%d tokens requested) — trying next model.",
-                            model, est_total_tokens,
+                            "Quota-aware skip: %s is GENUINELY exhausted "
+                            "(input %d > remaining) — trying next model.",
+                            model, est_input_tokens,
                         )
                         last_error = last_error or LLMError(
                             "All suitable models are at their quota headroom "
@@ -1034,8 +1034,9 @@ class LLMService:
                         continue
                     else:
                         logger.info(
-                            "Model %s is at quota limit but is the last resort — "
-                            "attempting anyway.", model
+                            "Model %s is near quota limit (~%d tokens requested) "
+                            "but has capacity for input — attempting anyway.", 
+                            model, est_total_tokens
                         )
                 else:
                     logger.info(

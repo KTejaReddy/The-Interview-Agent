@@ -409,6 +409,20 @@ class ModelHealthTracker:
         state.pending_tokens += estimated_tokens
         return True
 
+    def has_capacity_for(self, model: str, min_tokens: int) -> bool:
+        """Check if the model has strictly enough capacity to even receive the input.
+        If this is False, it is genuinely exhausted (100% chance of 429)."""
+        if min_tokens <= 0:
+            return True
+        state = self.get(model)
+        state.roll_windows()
+        if not state.healthy:
+            return False
+        q = quotas_for(model)
+        remaining_tpm = q["tpm"] - state.tokens_this_minute - state.pending_tokens
+        remaining_tpd = (q["tpd"] - state.tokens_today - state.pending_tokens) if q.get("tpd") else math.inf
+        return min_tokens <= remaining_tpm and min_tokens <= remaining_tpd
+
     def reconcile_capacity(
         self, model: str, estimated_tokens: int, actual_tokens: int
     ) -> None:
