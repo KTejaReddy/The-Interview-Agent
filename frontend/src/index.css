@@ -46,10 +46,10 @@
   .perspective-1200 { perspective: 1200px; }
   .preserve-3d { transform-style: preserve-3d; }
 
-  /* Avatar masking — blends avatar into card environment */
+  /* Avatar masking — shows full character, fades only at the feet/bottom */
   .mask-avatar {
-    mask-image: radial-gradient(ellipse 85% 75% at 50% 100%, black 45%, transparent 80%);
-    -webkit-mask-image: radial-gradient(ellipse 85% 75% at 50% 100%, black 45%, transparent 80%);
+    mask-image: linear-gradient(to bottom, black 0%, black 70%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 0%, black 70%, transparent 100%);
   }
 
   /* Typography utilities */
