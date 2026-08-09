@@ -1,7 +1,8 @@
 import { useRef, useState, useMemo, useCallback } from "react";
 import type { CandidateSummary } from "../types";
 import { RealisticAvatar } from "./CandidateCharacter";
-import { ArrowRight, BookOpen, CheckCircle, AlertCircle, SkipForward } from "lucide-react";
+import { getPalette, type CandidatePalette } from "../utils/palette";
+import { ArrowRight, BookOpen, AlertCircle, SkipForward, Sparkles } from "lucide-react";
 
 interface CandidateCard3DProps {
   candidate: CandidateSummary;
@@ -9,52 +10,6 @@ interface CandidateCard3DProps {
   onStartInterview: (id: string) => void;
   onViewDossier?: (id: string) => void;
   animationDelay?: number;
-}
-
-// ─── 20-PALETTE DETERMINISTIC SYSTEM ────────────────────────
-// Each palette has: primary color, secondary color, environment gradient,
-// glow color, progress gradient, and environment label.
-const PALETTES = [
-  // 0 — Cyan + Indigo (Data / Analytics)
-  { p:"#22d3ee", s:"#6366f1", env:"135deg,rgba(34,211,238,0.18) 0%,rgba(99,102,241,0.12) 60%,transparent 100%", glow:"rgba(34,211,238,0.3)", bar:"#22d3ee,#6366f1", ring:"rgba(34,211,238,0.35)" },
-  // 1 — Violet + Magenta (AI / ML)
-  { p:"#a78bfa", s:"#e879f9", env:"135deg,rgba(167,139,250,0.18) 0%,rgba(232,121,249,0.10) 60%,transparent 100%", glow:"rgba(167,139,250,0.3)", bar:"#a78bfa,#e879f9", ring:"rgba(167,139,250,0.35)" },
-  // 2 — Emerald + Cyan (DevOps / Cloud)
-  { p:"#34d399", s:"#22d3ee", env:"135deg,rgba(52,211,153,0.18) 0%,rgba(34,211,238,0.10) 60%,transparent 100%", glow:"rgba(52,211,153,0.3)", bar:"#34d399,#22d3ee", ring:"rgba(52,211,153,0.35)" },
-  // 3 — Amber + Orange (Business / Analyst)
-  { p:"#fbbf24", s:"#fb923c", env:"135deg,rgba(251,191,36,0.18) 0%,rgba(251,146,60,0.10) 60%,transparent 100%", glow:"rgba(251,191,36,0.28)", bar:"#fbbf24,#fb923c", ring:"rgba(251,191,36,0.35)" },
-  // 4 — Rose + Coral (HR / Marketing)
-  { p:"#fb7185", s:"#f97316", env:"135deg,rgba(251,113,133,0.18) 0%,rgba(249,115,22,0.10) 60%,transparent 100%", glow:"rgba(251,113,133,0.28)", bar:"#fb7185,#f97316", ring:"rgba(251,113,133,0.32)" },
-  // 5 — Indigo + Sky (Software / Backend)
-  { p:"#818cf8", s:"#38bdf8", env:"135deg,rgba(129,140,248,0.18) 0%,rgba(56,189,248,0.10) 60%,transparent 100%", glow:"rgba(129,140,248,0.3)", bar:"#818cf8,#38bdf8", ring:"rgba(129,140,248,0.35)" },
-  // 6 — Teal + Lime (Full-stack / Engineer)
-  { p:"#2dd4bf", s:"#a3e635", env:"135deg,rgba(45,212,191,0.18) 0%,rgba(163,230,53,0.10) 60%,transparent 100%", glow:"rgba(45,212,191,0.28)", bar:"#2dd4bf,#a3e635", ring:"rgba(45,212,191,0.32)" },
-  // 7 — Coral + Violet (UX / Creative)
-  { p:"#f43f5e", s:"#8b5cf6", env:"135deg,rgba(244,63,94,0.18) 0%,rgba(139,92,246,0.10) 60%,transparent 100%", glow:"rgba(244,63,94,0.28)", bar:"#f43f5e,#8b5cf6", ring:"rgba(244,63,94,0.32)" },
-  // 8 — Sky + Emerald (Architect / Principal)
-  { p:"#38bdf8", s:"#34d399", env:"135deg,rgba(56,189,248,0.18) 0%,rgba(52,211,153,0.10) 60%,transparent 100%", glow:"rgba(56,189,248,0.28)", bar:"#38bdf8,#34d399", ring:"rgba(56,189,248,0.32)" },
-  // 9 — Magenta + Amber (Legacy / Senior)
-  { p:"#d946ef", s:"#fbbf24", env:"135deg,rgba(217,70,239,0.16) 0%,rgba(251,191,36,0.10) 60%,transparent 100%", glow:"rgba(217,70,239,0.26)", bar:"#d946ef,#fbbf24", ring:"rgba(217,70,239,0.32)" },
-];
-
-function getPalette(id: string, role: string) {
-  const r = (role || "").toLowerCase();
-  // Role-based primary mapping
-  if (r.includes("data engineer") || r.includes("data scientist")) return PALETTES[0];
-  if (r.includes("ai engineer") || r.includes("machine learning"))   return PALETTES[1];
-  if (r.includes("devops") || r.includes("cloud") || r.includes("infrastructure")) return PALETTES[2];
-  if (r.includes("business") || r.includes("analyst"))               return PALETTES[3];
-  if (r.includes("hr") || r.includes("marketing") || r.includes("manager")) return PALETTES[4];
-  if (r.includes("backend") || r.includes("server"))                 return PALETTES[5];
-  if (r.includes("software") || r.includes("full"))                  return PALETTES[6];
-  if (r.includes("ux") || r.includes("researcher") || r.includes("creative")) return PALETTES[7];
-  if (r.includes("architect") || r.includes("principal") || r.includes("distinguished")) return PALETTES[8];
-  if (r.includes("legacy") || r.includes("it support") || r.includes("senior")) return PALETTES[9];
-  if (r.includes("mobile") || r.includes("frontend"))               return PALETTES[6];
-  if (r.includes("junior") || r.includes("intern"))                 return PALETTES[5];
-  // Deterministic fallback from id
-  const n = id.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-  return PALETTES[n % PALETTES.length];
 }
 
 // Role → environment keyword for the cinematic stage tag
@@ -78,12 +33,11 @@ function getEnvLabel(role: string): string {
 }
 
 // Environment SVG patterns per category
-function EnvPattern({ role, palette }: { role: string; palette: typeof PALETTES[0] }) {
+function EnvPattern({ role, palette }: { role: string; palette: CandidatePalette }) {
   const r = (role || "").toLowerCase();
   const c = palette.p;
 
   if (r.includes("data") || r.includes("analyst")) {
-    // Data grid / bar chart lines
     return (
       <svg className="absolute inset-0 w-full h-full opacity-[0.18]" viewBox="0 0 320 200" fill="none">
         {[20,50,80,110,140,170,200,230,260,290].map((x,i) => (
@@ -100,10 +54,8 @@ function EnvPattern({ role, palette }: { role: string; palette: typeof PALETTES[
     );
   }
   if (r.includes("ai") || r.includes("machine")) {
-    // Neural network nodes
     return (
       <svg className="absolute inset-0 w-full h-full opacity-[0.18]" viewBox="0 0 320 200" fill="none">
-        {/* Layer connections */}
         {[[60,60],[60,100],[60,140]].map(([y1], i) =>
           [60,100,140,180].map((dy, j) => (
             <line key={`${i}-${j}`} x1="70" y1={y1} x2="150" y2={dy} stroke={c} strokeOpacity="0.2" strokeWidth="0.8"/>
@@ -114,7 +66,6 @@ function EnvPattern({ role, palette }: { role: string; palette: typeof PALETTES[
             <line key={`r${i}-${j}`} x1="170" y1={sy} x2="250" y2={dy} stroke={c} strokeOpacity="0.2" strokeWidth="0.8"/>
           ))
         )}
-        {/* Nodes */}
         {[60,100,140].map(y => <circle key={y} cx="65" cy={y} r="5" fill={c} fillOpacity="0.5" stroke={c} strokeOpacity="0.8" strokeWidth="1"/>)}
         {[60,100,140,180].map(y => <circle key={y} cx="160" cy={y} r="5" fill={c} fillOpacity="0.4" stroke={c} strokeOpacity="0.7" strokeWidth="1"/>)}
         {[80,120,160].map(y => <circle key={y} cx="255" cy={y} r="5" fill={c} fillOpacity="0.6" stroke={c} strokeOpacity="0.9" strokeWidth="1"/>)}
@@ -122,7 +73,6 @@ function EnvPattern({ role, palette }: { role: string; palette: typeof PALETTES[
     );
   }
   if (r.includes("devops") || r.includes("cloud")) {
-    // Server rack grid
     return (
       <svg className="absolute inset-0 w-full h-full opacity-[0.18]" viewBox="0 0 320 200" fill="none">
         {[0,1,2,3,4,5].map(i => (
@@ -131,14 +81,12 @@ function EnvPattern({ role, palette }: { role: string; palette: typeof PALETTES[
         {[0,1,2,3,4,5].map(i => (
           <circle key={i} cx="248" cy={30 + i * 28} r="4" fill={i === 2 ? c : "transparent"} stroke={c} strokeOpacity={i === 2 ? 0.9 : 0.3} strokeWidth="1.2"/>
         ))}
-        {/* Connection lines */}
         <line x1="160" y1="188" x2="160" y2="168" stroke={c} strokeOpacity="0.4" strokeWidth="1" strokeDasharray="3 3"/>
         <line x1="100" y1="188" x2="220" y2="188" stroke={c} strokeOpacity="0.3" strokeWidth="1"/>
       </svg>
     );
   }
   if (r.includes("marketing") || r.includes("hr") || r.includes("ux") || r.includes("researcher")) {
-    // Creative wave / flow
     return (
       <svg className="absolute inset-0 w-full h-full opacity-[0.18]" viewBox="0 0 320 200" fill="none">
         <path d="M-10,100 C60,60 120,140 180,90 C240,40 280,120 330,80" stroke={c} strokeWidth="2" strokeOpacity="0.5" fill="none" strokeLinecap="round"/>
@@ -158,7 +106,6 @@ function EnvPattern({ role, palette }: { role: string; palette: typeof PALETTES[
       {[30,55,80,110,135,160].map((y,i) => (
         <rect key={i} x={20 + (i%3)*8} y={y} width={60 + Math.sin(i*1.3)*60} height="8" rx="2" fill={c} fillOpacity={0.15 + (i%3)*0.08}/>
       ))}
-      {/* Cursor blink */}
       <rect x="20" y="180" width="8" height="10" rx="1.5" fill={c} fillOpacity="0.6"/>
       {[1,2,3].map(i => (
         <path key={i} d={`M${80+i*60},50 L${100+i*60},65 L${80+i*60},80`} stroke={c} strokeWidth="1.5" strokeOpacity="0.3" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
@@ -193,17 +140,21 @@ export function CandidateCard3D({
   const readinessPct = Math.min(100, Math.round((passed / Math.max(curriculumDaysTotal, 1)) * 100));
 
   const readiness = useMemo(() => {
-    if (readinessPct >= 75) return { label: "Interview Ready", color: "#34d399", bg: "rgba(52,211,153,0.12)", border: "rgba(52,211,153,0.25)" };
-    if (readinessPct >= 45) return { label: "Developing",      color: "#fbbf24", bg: "rgba(251,191,36,0.12)",  border: "rgba(251,191,36,0.22)" };
+    if (readinessPct >= 75) return { label: "Interview Ready", color: "#22c55e", bg: "rgba(34,197,94,0.12)", border: "rgba(34,197,94,0.25)" };
+    if (readinessPct >= 45) return { label: "Developing",      color: "#f59e0b", bg: "rgba(245,158,11,0.12)",  border: "rgba(245,158,11,0.22)" };
     return                         { label: "Needs Practice",  color: "#fb7185", bg: "rgba(251,113,133,0.12)", border: "rgba(251,113,133,0.22)" };
   }, [readinessPct]);
 
-  // Timeline: show milestone days that have any event + key boundary days
-  const timelineDays = useMemo(() => {
-    const events = new Set([...completedDays, ...skippedDays, ...failedDays]);
+  // Timeline: milestone days on the cohort track, each tagged with the
+  // candidate's real per-day outcome.
+  const timeline = useMemo(() => {
     const milestones = [1, 7, 12, 16, 22, 27, 31];
-    milestones.forEach(d => events.add(d));
-    return Array.from(events).sort((a, b) => a - b).slice(0, 12);
+    return milestones.map((day) => {
+      const done    = completedDays.includes(day);
+      const skipped = skippedDays.includes(day);
+      const failed  = failedDays.includes(day);
+      return { day, done, skipped, failed };
+    });
   }, [completedDays, skippedDays, failedDays]);
 
   // Topics to show on card
@@ -250,7 +201,7 @@ export function CandidateCard3D({
           boxShadow: hovered
             ? `0 32px 64px -20px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.08), inset 0 1px 0 rgba(255,255,255,0.06)`
             : `0 4px 24px -8px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04)`,
-          borderColor: hovered ? `${palette.p}30` : "rgba(255,255,255,0.055)",
+          borderColor: hovered ? `${palette.p}30` : "rgba(255,255,255,0.06)",
           transition: "transform 280ms cubic-bezier(0.25,0.8,0.25,1), box-shadow 280ms cubic-bezier(0.25,0.8,0.25,1), border-color 280ms ease",
         }}
       >
@@ -272,9 +223,7 @@ export function CandidateCard3D({
           {/* Atmospheric background */}
           <div
             className="absolute inset-0"
-            style={{
-              background: `linear-gradient(160deg, #0a0d1a 0%, #0c1020 100%)`,
-            }}
+            style={{ background: "linear-gradient(160deg, var(--ink-850) 0%, var(--ink-800) 100%)" }}
           />
 
           {/* Candidate-specific color bloom */}
@@ -303,7 +252,7 @@ export function CandidateCard3D({
             className="absolute bottom-0 left-0 w-full"
             style={{
               height: "100px",
-              background: `linear-gradient(to top, #090d18 0%, transparent 100%)`,
+              background: "linear-gradient(to top, var(--ink-900) 0%, transparent 100%)",
               zIndex: 3,
             }}
           />
@@ -336,7 +285,7 @@ export function CandidateCard3D({
 
           {/* Character — pops forward on hover */}
           <div
-            className="absolute bottom-0 left-1/2 -translate-x-1/2"
+            className="absolute bottom-0 left-1/2"
             style={{
               width: "200px",
               height: "255px",
@@ -347,7 +296,7 @@ export function CandidateCard3D({
                 : "translateX(-50%) translateY(0) scale(1)",
               filter: hovered
                 ? `drop-shadow(0 16px 32px ${palette.glow})`
-                : `drop-shadow(0 8px 16px rgba(0,0,0,0.5))`,
+                : "drop-shadow(0 8px 16px rgba(0,0,0,0.5))",
             }}
           >
             <div className="w-full h-full mask-avatar">
@@ -363,6 +312,7 @@ export function CandidateCard3D({
                 background: readiness.bg,
                 border: `1px solid ${readiness.border}`,
                 color: readiness.color,
+                backdropFilter: "blur(6px)",
               }}
             >
               <span
@@ -381,6 +331,7 @@ export function CandidateCard3D({
                 background: `${palette.p}18`,
                 border: `1px solid ${palette.p}30`,
                 color: palette.p,
+                backdropFilter: "blur(6px)",
               }}
             >
               {envLabel}
@@ -413,15 +364,15 @@ export function CandidateCard3D({
             )}
           </div>
 
-          {/* Stats row */}
+          {/* Stats row — distinct real signals, no duplicated cells */}
           <div
             className="grid grid-cols-3 text-center rounded-[12px] overflow-hidden"
             style={{ border: "1px solid rgba(255,255,255,0.06)" }}
           >
             {[
-              { label: "Passed",   value: `${passed}` },
-              { label: "Days",     value: `${passed}`, suffix: `/${curriculumDaysTotal}` },
-              { label: "Readiness", value: `${readinessPct}%`, color: readiness.color },
+              { label: "Missions",   value: `${passed}`, color: "#fff" },
+              { label: "First-try",  value: `${candidate.missionsFirstTry ?? 0}`, color: "#34d399" },
+              { label: "Readiness",  value: `${readinessPct}%`, color: readiness.color },
             ].map((s, i) => (
               <div
                 key={i}
@@ -429,15 +380,14 @@ export function CandidateCard3D({
                 style={{ borderColor: "rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.025)" }}
               >
                 <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-500 mb-1">{s.label}</span>
-                <span className="text-lg font-bold" style={{ color: s.color ?? "#fff" }}>
+                <span className="stat-number text-lg font-bold" style={{ color: s.color }}>
                   {s.value}
-                  {s.suffix && <span className="text-[11px] font-medium text-slate-500">{s.suffix}</span>}
                 </span>
               </div>
             ))}
           </div>
 
-          {/* Cohort Journey */}
+          {/* Cohort Journey — milestone track with real per-day outcomes */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-500">Cohort Journey</span>
@@ -451,7 +401,7 @@ export function CandidateCard3D({
 
             {/* Progress bar */}
             <div
-              className="relative h-[4px] w-full rounded-full mb-3"
+              className="relative h-[4px] w-full rounded-full mb-4"
               style={{ background: "rgba(255,255,255,0.07)" }}
             >
               <div
@@ -464,32 +414,62 @@ export function CandidateCard3D({
               />
             </div>
 
-            {/* Timeline nodes — derived from ACTUAL candidate data */}
-            {timelineDays.length > 0 && (
-              <div className="flex items-end gap-1.5 flex-wrap">
-                {timelineDays.map((day) => {
-                  const done    = completedDays.includes(day);
-                  const skipped = skippedDays.includes(day);
-                  const failed  = failedDays.includes(day);
+            {/* Journey track — nodes connected by a continuous line */}
+            <div className="journey-track">
+              {timeline.map(({ day, done, skipped, failed }) => {
+                const state = done ? "passed" : (skipped ? "skipped" : (failed ? "failed" : "upcoming"));
+                const isCurrent = !done && !skipped && !failed && day === (passed + 1 <= 31 ? passed + 1 : -1);
+                return (
+                  <div
+                    key={day}
+                    className="journey-node"
+                    title={`Day ${day}${done ? " ✓ passed" : skipped ? " (skipped)" : failed ? " ✗ failed" : " — upcoming"}`}
+                    style={{
+                      "--node-color": palette.p,
+                      "--node-glow": palette.ring,
+                    } as React.CSSProperties}
+                  >
+                    <span
+                      className={`node-dot ${state === "passed" ? "passed" : ""} ${isCurrent ? "current" : ""}`}
+                      style={
+                        state === "skipped"
+                          ? { borderColor: "rgba(245,158,11,0.6)" }
+                          : state === "failed"
+                            ? { borderColor: "rgba(251,113,133,0.6)" }
+                            : undefined
+                      }
+                    />
+                    <span className={`node-label ${done ? "lit" : ""}`}>D{String(day).padStart(2, "0")}</span>
+                  </div>
+                );
+              })}
+            </div>
 
-                  return (
-                    <div key={day} title={`Day ${day}${done?" ✓":skipped?" (skipped)":failed?" ✗":""}`}>
-                      <div
-                        className="w-[28px] h-[28px] rounded-[7px] flex items-center justify-center text-[9px] font-bold font-mono transition-all duration-200"
-                        style={
-                          done    ? { background: `${palette.p}22`, color: palette.p,  border: `1.5px solid ${palette.p}50`, boxShadow: hovered ? `0 0 8px ${palette.p}40` : "none" } :
-                          skipped ? { background: "rgba(251,191,36,0.1)",  color:"#fbbf24", border:"1.5px solid rgba(251,191,36,0.3)" } :
-                          failed  ? { background: "rgba(251,113,133,0.1)", color:"#fb7185", border:"1.5px solid rgba(251,113,133,0.3)" } :
-                                    { background: "rgba(255,255,255,0.04)", color:"#4b5563", border:"1.5px solid rgba(255,255,255,0.06)" }
-                        }
-                      >
-                        {skipped ? <SkipForward className="w-2.5 h-2.5" /> : failed ? <AlertCircle className="w-2.5 h-2.5" /> : day}
-                      </div>
-                    </div>
-                  );
-                })}
+            {/* Outcome legend — distinct real signals, no duplicated counts */}
+            {(candidate.struggles ?? 0) > 0 || (candidate.failed ?? 0) > 0 || (candidate.skipped ?? 0) > 0 || (candidate.missionsFirstTry ?? 0) > 0 ? (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2.5 pt-2 border-t" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
+                {(candidate.struggles ?? 0) > 0 && (
+                  <span className="flex items-center gap-1 text-[9.5px] text-amber-400/90">
+                    <AlertCircle className="w-3 h-3" /> {candidate.struggles} struggled
+                  </span>
+                )}
+                {(candidate.failed ?? 0) > 0 && (
+                  <span className="flex items-center gap-1 text-[9.5px] text-rose-400/90">
+                    <AlertCircle className="w-3 h-3" /> {candidate.failed} failed
+                  </span>
+                )}
+                {(candidate.skipped ?? 0) > 0 && (
+                  <span className="flex items-center gap-1 text-[9.5px] text-slate-400/90">
+                    <SkipForward className="w-3 h-3" /> {candidate.skipped} skipped
+                  </span>
+                )}
+                {(candidate.missionsFirstTry ?? 0) > 0 && (
+                  <span className="flex items-center gap-1 text-[9.5px] text-emerald-400/90">
+                    <Sparkles className="w-3 h-3" /> {candidate.missionsFirstTry} first-try
+                  </span>
+                )}
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* Interviewable topics — REAL data from backend */}
@@ -505,10 +485,10 @@ export function CandidateCard3D({
                 {visibleTopics.map((t, i) => (
                   <span
                     key={i}
-                    className="text-[10px] font-medium px-2 py-0.5 rounded-md"
+                    className="topic-chip"
                     style={{
                       background: `${palette.p}14`,
-                      border: `1px solid ${palette.p}28`,
+                      borderColor: `${palette.p}28`,
                       color: palette.p,
                     }}
                   >
@@ -517,8 +497,8 @@ export function CandidateCard3D({
                 ))}
                 {completedTopics.length > 3 && (
                   <span
-                    className="text-[10px] font-medium px-2 py-0.5 rounded-md text-slate-500"
-                    style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}
+                    className="topic-chip text-slate-500"
+                    style={{ background: "rgba(255,255,255,0.04)", borderColor: "rgba(255,255,255,0.07)" }}
                   >
                     +{completedTopics.length - 3}
                   </span>
@@ -527,48 +507,12 @@ export function CandidateCard3D({
             </div>
           )}
 
-          {/* Signal row */}
-          {((candidate.missionsFirstTry ?? 0) > 0 || (candidate.failed ?? 0) > 0) && (
-            <div className="flex items-center gap-3 pt-1 border-t" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
-              {(candidate.missionsFirstTry ?? 0) > 0 && (
-                <div className="flex items-center gap-1 text-[10px] text-emerald-400">
-                  <CheckCircle className="w-3 h-3" />
-                  <span>{candidate.missionsFirstTry} first-try</span>
-                </div>
-              )}
-              {(candidate.struggles ?? 0) > 0 && (
-                <div className="text-[10px] text-amber-400">
-                  ⟳ {candidate.struggles} struggled
-                </div>
-              )}
-              {(candidate.failed ?? 0) > 0 && (
-                <div className="flex items-center gap-1 text-[10px] text-rose-400">
-                  <AlertCircle className="w-3 h-3" />
-                  <span>{candidate.failed} failed</span>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* ─── ACTIONS ────────────────────────────────────── */}
           <div className="flex items-center gap-2 pt-1">
             {/* Secondary: Dossier */}
             <button
               onClick={() => onViewDossier?.(candidate.id)}
-              className="flex items-center gap-1.5 px-3 py-2.5 rounded-[10px] text-[12px] font-semibold transition-all duration-200"
-              style={{
-                background: "rgba(255,255,255,0.04)",
-                border: "1px solid rgba(255,255,255,0.07)",
-                color: "rgba(148,163,184,0.8)",
-              }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.08)";
-                (e.currentTarget as HTMLElement).style.color = "#fff";
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)";
-                (e.currentTarget as HTMLElement).style.color = "rgba(148,163,184,0.8)";
-              }}
+              className="btn btn-secondary flex-1 !py-2.5 text-[12px]"
             >
               <BookOpen className="w-3.5 h-3.5" />
               Dossier
@@ -577,8 +521,9 @@ export function CandidateCard3D({
             {/* Primary: Start Interview */}
             <button
               onClick={(e) => { e.stopPropagation(); onStartInterview(candidate.id); }}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-[10px] text-[13px] font-bold text-white transition-all duration-220 group/ibtn"
+              className="btn flex-1 !py-2.5 text-[13px] group/ibtn"
               style={{
+                color: "#fff",
                 background: `linear-gradient(135deg, ${palette.bar})`,
                 boxShadow: hovered
                   ? `0 8px 24px -6px ${palette.glow}, inset 0 1px 0 rgba(255,255,255,0.15)`
@@ -587,9 +532,7 @@ export function CandidateCard3D({
               }}
             >
               Start Interview
-              <ArrowRight
-                className="w-3.5 h-3.5 transition-transform duration-200 group-hover/ibtn:translate-x-1"
-              />
+              <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover/ibtn:translate-x-1" />
             </button>
           </div>
         </div>

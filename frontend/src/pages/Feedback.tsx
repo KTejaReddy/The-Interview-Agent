@@ -2,7 +2,7 @@ import { Brand } from "../components/Brand";
 import { ScoreRing } from "../components/ScoreRing";
 import { useInterview } from "../context/InterviewContext";
 import type { Page } from "../types";
-import { ArrowLeft, RotateCcw } from "lucide-react";
+import { ArrowLeft, RotateCcw, Award, Target, Compass } from "lucide-react";
 
 interface FeedbackProps {
   onNavigate: (page: Page) => void;
@@ -35,10 +35,11 @@ export function Feedback({ onNavigate }: FeedbackProps) {
 
   return (
     <div className="relative min-h-screen bg-background pb-32 text-gray-200">
-      
+
       {/* Background Atmosphere */}
       <div className="absolute bg-orb-1 top-[-10%] left-[-10%] w-[600px] h-[600px] pointer-events-none" />
       <div className="absolute bg-orb-2 top-[30%] right-[-10%] w-[600px] h-[600px] pointer-events-none" />
+      <div className="absolute inset-0 tech-grid opacity-60 pointer-events-none" />
 
       {/* Header */}
       <header className="relative z-20 border-b border-white/5 bg-surface-50/80 backdrop-blur-md sticky top-0 py-4">
@@ -46,29 +47,35 @@ export function Feedback({ onNavigate }: FeedbackProps) {
           <Brand />
           <button
             onClick={handleRestart}
-            className="flex items-center gap-2 rounded-lg bg-surface-100 border border-white/10 px-4 py-2 text-xs font-semibold text-white transition-all hover:bg-surface-200"
+            className="btn btn-secondary text-xs"
           >
-            <ArrowLeft className="w-3 h-3" />
+            <ArrowLeft className="w-3.5 h-3.5" />
             Start another interview
           </button>
         </div>
       </header>
 
       <div className="relative z-10 mx-auto max-w-5xl px-6 pt-12 animate-fade-up">
-        
+
         {/* Document Header */}
         <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-black text-white mb-6 tracking-tight">Performance Report</h1>
-          
+          <p className="text-eyebrow text-accent-400 mb-3">Assessment Report</p>
+          <h1
+            className="text-4xl md:text-5xl font-black text-white mb-6 tracking-tight"
+            style={{ letterSpacing: "-0.03em" }}
+          >
+            Performance Report
+          </h1>
+
           <div className="inline-flex items-center justify-center gap-6 border-y border-white/10 py-4 px-12 glass-card rounded-2xl">
             <div className="flex flex-col items-center">
               <span className="text-[10px] font-bold uppercase tracking-widest text-base-500">Questions</span>
-              <span className="font-bold text-xl text-white">{questionNumber}</span>
+              <span className="stat-number font-bold text-xl text-white">{questionNumber}</span>
             </div>
             <div className="w-px h-8 bg-white/10" />
             <div className="flex flex-col items-center">
               <span className="text-[10px] font-bold uppercase tracking-widest text-base-500">Curriculum Days</span>
-              <span className="font-bold text-xl text-white">{daysCovered.length}</span>
+              <span className="stat-number font-bold text-xl text-white">{daysCovered.length}</span>
             </div>
             <div className="w-px h-8 bg-white/10" />
             <div className="flex flex-col items-center">
@@ -80,15 +87,19 @@ export function Feedback({ onNavigate }: FeedbackProps) {
 
         {/* The Interviewer's Take (Summary) */}
         <div className="glass-card p-8 mb-12 rounded-2xl relative overflow-hidden flex flex-col md:flex-row items-center md:items-start gap-8">
-          <div className="absolute top-0 left-0 w-1.5 h-full bg-accent-cyan shadow-[0_0_15px_#00F0FF]" />
+          <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-accent-500 to-accent-cyan" />
+          <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(ellipse 60% 50% at 100% 0%, rgba(124,92,255,0.06) 0%, transparent 70%)" }} />
           {typeof feedback.score === "number" && (
-            <div className="shrink-0 flex flex-col items-center gap-3 bg-surface-50/50 p-6 rounded-2xl border border-white/5">
+            <div className="shrink-0 flex flex-col items-center gap-3 bg-surface-50/50 p-6 rounded-2xl border border-white/5 relative">
               <ScoreRing score={feedback.score} />
               <span className="text-[10px] font-bold uppercase tracking-widest text-base-400">Overall Score</span>
             </div>
           )}
-          <div className="pt-2">
-            <h2 className="text-xl font-bold text-white mb-4">Interviewer's Take</h2>
+          <div className="pt-2 relative">
+            <h2 className="flex items-center gap-2 text-xl font-bold text-white mb-4">
+              <Award className="w-5 h-5 text-accent-400" />
+              Interviewer's Take
+            </h2>
             <p className="text-base-300 leading-relaxed text-sm">
               {feedback.summary}
             </p>
@@ -98,6 +109,7 @@ export function Feedback({ onNavigate }: FeedbackProps) {
         <div className="grid md:grid-cols-2 gap-6 mb-12">
           {/* Strengths */}
           <FeedbackSection
+            icon={<Target className="w-4 h-4" />}
             title="Strengths"
             tone="mint"
             items={feedback.strengths}
@@ -106,6 +118,7 @@ export function Feedback({ onNavigate }: FeedbackProps) {
 
           {/* Gaps */}
           <FeedbackSection
+            icon={<Target className="w-4 h-4" />}
             title="Areas to Grow"
             tone="amber"
             items={feedback.gaps}
@@ -115,6 +128,7 @@ export function Feedback({ onNavigate }: FeedbackProps) {
 
         {/* Next steps */}
         <FeedbackSection
+          icon={<Compass className="w-4 h-4" />}
           title="What to Study Next"
           tone="accent"
           items={feedback.next}
@@ -124,7 +138,7 @@ export function Feedback({ onNavigate }: FeedbackProps) {
         <div className="mt-16 flex justify-center border-t border-white/10 pt-10 animate-fade-up" style={{ animationDelay: '400ms' }}>
           <button
             onClick={handleRestart}
-            className="flex items-center gap-3 rounded-xl bg-premium-gradient px-8 py-4 font-bold text-white transition-all duration-300 hover:opacity-90 shadow-lg shadow-accent-purple/20 hover:-translate-y-0.5"
+            className="btn btn-primary !px-8 !py-4 text-[14px]"
           >
             <RotateCcw className="w-5 h-5" />
             Start New Interview Session
@@ -136,13 +150,14 @@ export function Feedback({ onNavigate }: FeedbackProps) {
 }
 
 interface FeedbackSectionProps {
+  icon: React.ReactNode;
   title: string;
   tone: "mint" | "amber" | "accent";
   items: string[];
   delay: number;
 }
 
-function FeedbackSection({ title, tone, items, delay }: FeedbackSectionProps) {
+function FeedbackSection({ icon, title, tone, items, delay }: FeedbackSectionProps) {
   if (!items || items.length === 0) return null;
 
   const tones = {
@@ -155,17 +170,19 @@ function FeedbackSection({ title, tone, items, delay }: FeedbackSectionProps) {
       titleColor: "text-amber-400",
     },
     accent: {
-      bullet: "bg-accent-cyan shadow-[0_0_10px_#00F0FF]",
-      titleColor: "text-accent-cyan",
+      bullet: "bg-accent-400 shadow-[0_0_10px_#9d8cff]",
+      titleColor: "text-accent-400",
     },
   }[tone];
 
   return (
     <div
-      className="glass-card rounded-2xl p-6 animate-fade-up border-t border-white/10"
+      className="glass-card rounded-2xl p-6 animate-fade-up border-t border-white/10 relative overflow-hidden"
       style={{ animationDelay: `${delay}ms` }}
     >
-      <h2 className={`text-lg font-bold ${tones.titleColor} mb-4`}>
+      <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(ellipse 60% 40% at 0% 0%, rgba(255,255,255,0.03) 0%, transparent 70%)" }} />
+      <h2 className={`flex items-center gap-2 text-lg font-bold ${tones.titleColor} mb-4`}>
+        {icon}
         {title}
       </h2>
       <ul className="space-y-4">

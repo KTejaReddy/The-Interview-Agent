@@ -10,7 +10,7 @@ import { RealisticAvatar } from "../components/CandidateCharacter";
 import { useInterview } from "../context/InterviewContext";
 import { useAutoScroll } from "../hooks/useAutoScroll";
 import type { Page } from "../types";
-import { Send } from "lucide-react";
+import { Send, Sparkles } from "lucide-react";
 import { SecurityIndicator } from "../components/SecurityIndicator";
 import { useInterviewSecurity } from "../security/useInterviewSecurity";
 
@@ -81,7 +81,7 @@ export function Interview({ onNavigate }: InterviewProps) {
   let interviewerState: 'idle' | 'thinking' | 'speaking' | 'listening' | 'frustrated' = 'idle';
   if (interviewerTyping) interviewerState = 'thinking';
   else if (messages.length > 0 && messages[messages.length - 1].role === 'candidate') interviewerState = 'listening';
-  
+
   const idkCount = messages.filter(m => m.role === 'candidate' && m.text.toLowerCase().includes("don't know")).length;
   if (idkCount > 1 && interviewerTyping) interviewerState = 'frustrated';
 
@@ -91,10 +91,11 @@ export function Interview({ onNavigate }: InterviewProps) {
 
   return (
     <div className={`flex h-screen flex-col bg-background relative overflow-hidden font-sans text-gray-200 ${!interviewComplete && state !== 'DONE' ? 'interview-locked-content' : ''}`}>
-      
+
       {/* Background Atmosphere */}
       <div className="absolute bg-orb-1 top-[10%] left-[-10%] w-[800px] h-[800px] pointer-events-none" />
       <div className="absolute bg-orb-2 bottom-[20%] right-[-10%] w-[600px] h-[600px] pointer-events-none" />
+      <div className="absolute inset-0 tech-grid opacity-60 pointer-events-none" />
 
       {/* Header */}
       <header className="relative z-20 border-b border-white/5 bg-surface-50/80 backdrop-blur-xl">
@@ -104,7 +105,7 @@ export function Interview({ onNavigate }: InterviewProps) {
               <Brand size="sm" />
             </button>
             <div className="hidden md:flex h-6 w-px bg-white/10" />
-            
+
             <div className="hidden md:flex items-center gap-6">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-base-500">Progress</span>
@@ -112,11 +113,11 @@ export function Interview({ onNavigate }: InterviewProps) {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-base-500">Coverage</span>
-                <span className="font-bold text-white text-sm">{daysCovered.length} <span className="text-base-500 font-medium text-xs">days</span></span>
+                <span className="font-bold text-white text-sm">{daysCovered.length} <span className="text-base-500 font-medium text-xs">{daysCovered.length === 1 ? "day" : "days"}</span></span>
               </div>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-4">
             {!interviewComplete && state !== "DONE" && <SecurityIndicator />}
             <SessionIndicator sessionId={sessionId} state={state} />
@@ -126,41 +127,66 @@ export function Interview({ onNavigate }: InterviewProps) {
 
       {/* Main Layout */}
       <div className="flex-1 flex overflow-hidden relative z-10 max-w-7xl mx-auto w-full">
-        
+
         {/* Left Sidebar: Profiles */}
         <aside className="hidden lg:flex w-72 flex-col p-6 overflow-y-auto border-r border-white/5">
-          
+
           {/* Interviewer */}
-          <div className="mb-10 text-center glass-card rounded-2xl p-6">
-            <div className="w-24 h-24 mx-auto bg-surface-200/50 rounded-full border border-white/10 mb-4 flex items-center justify-center pt-2 overflow-hidden shadow-inner">
-              <InterviewerCharacter state={interviewerState} />
+          <div className="mb-10 text-center glass-card rounded-2xl p-6 relative overflow-hidden">
+            <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(ellipse 70% 40% at 50% 0%, rgba(124,92,255,0.10) 0%, transparent 70%)" }} />
+            <div className="relative">
+              <div className="w-24 h-24 mx-auto bg-surface-200/50 rounded-full border border-white/10 mb-4 flex items-center justify-center pt-2 overflow-hidden shadow-inner">
+                <InterviewerCharacter state={interviewerState} />
+              </div>
+              <h3 className="text-lg font-bold text-white">Alex</h3>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-accent-400 mt-1">Technical Interviewer</p>
+
+              {/* Thinking indicator — subtle orbit pulse while composing */}
+              {interviewerTyping && (
+                <div className="mt-4 flex items-center justify-center gap-2 text-[10px] text-slate-400">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-500 opacity-60" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-accent-400" />
+                  </span>
+                  <span className="font-semibold uppercase tracking-widest">Analyzing your answer</span>
+                </div>
+              )}
             </div>
-            <h3 className="text-lg font-bold text-white">Alex</h3>
-            <p className="text-[9px] font-bold uppercase tracking-widest text-accent-400 mt-1">Technical Interviewer</p>
           </div>
 
           {/* Candidate */}
-          <div className="glass-card-intense rounded-2xl p-5 border border-white/10 shadow-glow-cyan/20">
+          <div
+            className="glass-card-intense rounded-2xl p-5 border border-white/10 relative overflow-hidden"
+            style={{ boxShadow: "0 8px 32px rgba(34,211,238,0.10), inset 0 1px 0 rgba(255,255,255,0.12)" }}
+          >
             <h4 className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 mb-4 border-b border-white/10 pb-2">Candidate</h4>
             <div className="flex items-center gap-4 mb-4">
               <div className="w-12 h-12 bg-surface-200/50 rounded-full border border-cyan-400/30 flex items-center justify-center overflow-hidden shrink-0 shadow-glow-cyan">
-                <RealisticAvatar name={candidateName} id={candidateId} />
+                <RealisticAvatar name={candidateName} id={candidateId ?? undefined} />
               </div>
               <div>
                 <p className="font-bold text-white text-sm">{candidateName}</p>
                 <p className="text-[9px] font-bold text-mint-400 uppercase mt-0.5 tracking-widest">{candidateRole}</p>
               </div>
             </div>
+
+            {/* Current focus chip */}
+            {currentTopic && (
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                <Sparkles className="w-3 h-3 text-cyan-400" />
+                <span className="truncate">{currentTopic}</span>
+              </div>
+            )}
           </div>
         </aside>
 
         {/* Right Panel: Conversation */}
         <main className="flex-1 flex flex-col relative">
-          
+
           {/* Transcript Area */}
           <div ref={transcriptRef} className="flex-1 overflow-y-auto px-4 py-8 md:px-12 scroll-smooth">
             <div className="max-w-2xl mx-auto flex flex-col gap-8 pb-10">
-              
+
               {error && (
                 <div className="sticky top-0 z-30 mb-8">
                   <ErrorBanner message={error} onDismiss={dismissError} />
@@ -192,11 +218,11 @@ export function Interview({ onNavigate }: InterviewProps) {
 
               {interviewerTyping && (
                 <div className="flex flex-col gap-2 animate-fade-in pl-14">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-base-500">Alex is typing</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-base-500">Alex is thinking</span>
                   <div className="flex items-center gap-1.5 h-6">
-                    <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent-500" style={{ animationDelay: "0ms" }} />
-                    <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent-500" style={{ animationDelay: "150ms" }} />
-                    <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent-500" style={{ animationDelay: "300ms" }} />
+                    <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent-400" style={{ animationDelay: "0ms" }} />
+                    <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent-400" style={{ animationDelay: "150ms" }} />
+                    <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent-400" style={{ animationDelay: "300ms" }} />
                   </div>
                 </div>
               )}
@@ -206,7 +232,7 @@ export function Interview({ onNavigate }: InterviewProps) {
           {/* Input Area */}
           <footer className="bg-surface-50/50 backdrop-blur-md p-4 md:px-12 border-t border-white/5">
             <div className="max-w-2xl mx-auto">
-              
+
               {currentDay && (
                 <div className="mb-3 flex items-center justify-between px-1">
                   <div className="flex items-center gap-3">
@@ -220,7 +246,7 @@ export function Interview({ onNavigate }: InterviewProps) {
                   )}
                 </div>
               )}
-              
+
               <form onSubmit={handleSubmit} className="relative">
                 <textarea
                   ref={inputRef}
@@ -231,7 +257,7 @@ export function Interview({ onNavigate }: InterviewProps) {
                   rows={2}
                   placeholder={
                     interviewerTyping
-                      ? "Alex is typing..."
+                      ? "Alex is thinking..."
                       : interviewComplete
                         ? "Interview concluded."
                         : "Explain your approach..."
@@ -239,7 +265,7 @@ export function Interview({ onNavigate }: InterviewProps) {
                   className="w-full resize-none rounded-xl border border-white/10 bg-surface-100 px-5 py-4 pr-16 text-sm leading-relaxed text-white placeholder:text-base-500 focus:outline-none focus:border-accent-500 focus:ring-1 focus:ring-accent-500 transition-all shadow-inner min-h-[90px] max-h-[300px]"
                   autoFocus
                 />
-                
+
                 <div className="absolute right-3 bottom-3 flex items-center gap-2">
                   <div className="hidden sm:flex flex-col items-end gap-0.5 text-[8px] text-base-500 font-semibold mr-1 uppercase tracking-widest">
                     <span>Enter ↵</span>
@@ -256,7 +282,7 @@ export function Interview({ onNavigate }: InterviewProps) {
               </form>
             </div>
           </footer>
-          
+
         </main>
       </div>
 

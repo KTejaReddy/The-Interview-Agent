@@ -1,13 +1,16 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useInterview } from "../context/InterviewContext";
 import type { CandidateSummary, Page } from "../types";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { Navigation } from "../components/Navigation";
 import { CandidateCard3D } from "../components/CandidateCard3D";
 import { CandidateDrawer } from "../components/CandidateDrawer";
+import { useCountUp } from "../hooks/useCountUp";
+import { useReveal } from "../hooks/useReveal";
 import {
   Search, Users, CalendarDays, MessageSquare, Zap,
-  SlidersHorizontal, LayoutGrid, ChevronDown,
+  SlidersHorizontal, LayoutGrid, ChevronDown, ArrowRight,
+  Compass, ShieldCheck,
 } from "lucide-react";
 
 interface LandingProps {
@@ -26,13 +29,13 @@ function HeroJourneyArt() {
     >
       <defs>
         <linearGradient id="hg1" x1="0" y1="0" x2="1400" y2="420" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#6366f1" /><stop offset="0.4" stopColor="#a78bfa" /><stop offset="0.7" stopColor="#22d3ee" /><stop offset="1" stopColor="#34d399" />
+          <stop stopColor="#7c5cff" /><stop offset="0.4" stopColor="#a78bfa" /><stop offset="0.7" stopColor="#22d3ee" /><stop offset="1" stopColor="#14b8a6" />
         </linearGradient>
         <linearGradient id="hg2" x1="0" y1="420" x2="1400" y2="0" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#fbbf24" /><stop offset="0.5" stopColor="#fb7185" /><stop offset="1" stopColor="#a78bfa" />
+          <stop stopColor="#f59e0b" /><stop offset="0.5" stopColor="#fb7185" /><stop offset="1" stopColor="#a78bfa" />
         </linearGradient>
         <linearGradient id="hg3" x1="700" y1="0" x2="700" y2="420" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#22d3ee" /><stop offset="1" stopColor="#6366f1" />
+          <stop stopColor="#22d3ee" /><stop offset="1" stopColor="#7c5cff" />
         </linearGradient>
         <filter id="softBlur">
           <feGaussianBlur stdDeviation="1.5" />
@@ -52,7 +55,7 @@ function HeroJourneyArt() {
       {/* Main journey arc — primary path */}
       <path
         d="M-50,350 C150,280 300,380 500,280 C700,180 850,320 1100,180 C1200,130 1310,160 1450,100"
-        stroke="url(#hg1)" strokeWidth="1.5" strokeOpacity="0.45" strokeDasharray="8 12" strokeLinecap="round"
+        stroke="url(#hg1)" strokeWidth="1.5" strokeOpacity="0.5" strokeDasharray="8 12" strokeLinecap="round"
         filter="url(#softBlur)"
       />
       {/* Secondary warm path */}
@@ -68,13 +71,13 @@ function HeroJourneyArt() {
 
       {/* Milestone nodes on the main path */}
       {[
-        { cx: 100,  cy: 335, r: 3.5, c: "#6366f1", label: "Day 1" },
+        { cx: 100,  cy: 335, r: 3.5, c: "#7c5cff", label: "Day 1" },
         { cx: 300,  cy: 360, r: 4,   c: "#a78bfa", label: "Day 7" },
         { cx: 500,  cy: 280, r: 5,   c: "#22d3ee", label: "Day 12" },
         { cx: 720,  cy: 220, r: 5,   c: "#22d3ee", label: "Day 16" },
         { cx: 920,  cy: 280, r: 4.5, c: "#a78bfa", label: "Day 22" },
-        { cx: 1100, cy: 180, r: 5,   c: "#34d399", label: "Day 27" },
-        { cx: 1300, cy: 130, r: 6,   c: "#34d399", label: "Day 31" },
+        { cx: 1100, cy: 180, r: 5,   c: "#14b8a6", label: "Day 27" },
+        { cx: 1300, cy: 130, r: 6,   c: "#22c55e", label: "Day 31" },
       ].map(({ cx, cy, r, c, label }) => (
         <g key={label}>
           {/* Outer pulse ring */}
@@ -82,15 +85,15 @@ function HeroJourneyArt() {
           {/* Node */}
           <circle cx={cx} cy={cy} r={r} fill={c} fillOpacity="0.9" />
           {/* Label */}
-          <text x={cx} y={cy - r - 5} textAnchor="middle" fill={c} fontSize="8" fontFamily="JetBrains Mono, monospace" fillOpacity="0.7">{label}</text>
+          <text x={cx} y={cy - r - 5} textAnchor="middle" fill={c} fontSize="8" fontFamily="ui-monospace, monospace" fillOpacity="0.7">{label}</text>
         </g>
       ))}
 
       {/* Floating data fragments — scattered points */}
       {[
-        [200, 100, "#a78bfa"], [450, 150, "#22d3ee"], [650, 80, "#6366f1"],
-        [850, 120, "#34d399"], [1050, 90, "#fbbf24"], [1200, 70, "#a78bfa"],
-        [1350, 110, "#22d3ee"], [80, 200, "#34d399"], [380, 60, "#fb7185"],
+        [200, 100, "#a78bfa"], [450, 150, "#22d3ee"], [650, 80, "#7c5cff"],
+        [850, 120, "#14b8a6"], [1050, 90, "#f59e0b"], [1200, 70, "#a78bfa"],
+        [1350, 110, "#22d3ee"], [80, 200, "#14b8a6"], [380, 60, "#fb7185"],
       ].map(([x, y, c], i) => (
         <circle key={i} cx={x as number} cy={y as number} r="2" fill={c as string} fillOpacity="0.35" />
       ))}
@@ -98,25 +101,66 @@ function HeroJourneyArt() {
   );
 }
 
-// ─── METRIC CARD ─────────────────────────────────────────────
-interface MetricProps {
+// ─── STAT (count-up enabled) ─────────────────────────────────
+interface StatProps {
   icon: React.ReactNode;
-  value: string;
+  value: number;
+  suffix?: string;
   label: string;
   accent: string;
   delay?: number;
+  decimals?: number;
+  staticValue?: string;
 }
-function MetricCard({ icon, value, label, accent, delay = 0 }: MetricProps) {
+function StatCard({ icon, value, suffix = "", label, accent, delay = 0, decimals = 0, staticValue }: StatProps) {
+  const animated = useCountUp(value, { start: true, decimals });
   return (
-    <div
-      className="metric-card animate-fade-up"
-      style={{ animationDelay: `${delay}ms` }}
-    >
+    <div className="metric-card animate-fade-up reveal" style={{ animationDelay: `${delay}ms` }}>
       <div className="flex items-center gap-2 mb-2" style={{ color: accent }}>
         {icon}
-        <span className="text-[24px] font-bold text-white leading-none tracking-tight">{value}</span>
+        <span className="stat-number text-[26px] font-extrabold text-white leading-none tracking-tight">
+          {staticValue ?? animated}{suffix && <span className="text-[13px] font-bold text-slate-400 ml-0.5">{suffix}</span>}
+        </span>
       </div>
       <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-500">{label}</span>
+    </div>
+  );
+}
+
+// ─── ATMOSPHERIC BACKDROP (shared layer system) ─────────────
+function Backdrop() {
+  const dots = useMemo(
+    () => [
+      { top: "12%", left: "8%", delay: "0s" },
+      { top: "22%", left: "22%", delay: "-4s" },
+      { top: "8%", left: "48%", delay: "-8s" },
+      { top: "18%", left: "70%", delay: "-2s" },
+      { top: "30%", left: "88%", delay: "-6s" },
+      { top: "55%", left: "12%", delay: "-10s" },
+      { top: "48%", left: "42%", delay: "-3s" },
+      { top: "65%", left: "62%", delay: "-7s" },
+      { top: "80%", left: "30%", delay: "-5s" },
+      { top: "88%", left: "78%", delay: "-9s" },
+    ],
+    []
+  );
+  return (
+    <div className="app-backdrop" aria-hidden="true">
+      {/* Aurora color fields */}
+      <div className="aurora-field" style={{ width: 700, height: 700, top: "-18%", left: "-12%", background: "radial-gradient(circle, rgba(124,92,255,0.16) 0%, transparent 65%)" }} />
+      <div className="aurora-field" style={{ width: 620, height: 620, top: "22%", right: "-14%", background: "radial-gradient(circle, rgba(34,211,238,0.10) 0%, transparent 65%)", animationDelay: "-9s" }} />
+      <div className="aurora-field" style={{ width: 520, height: 520, bottom: "-10%", left: "28%", background: "radial-gradient(circle, rgba(20,184,166,0.08) 0%, transparent 65%)", animationDelay: "-17s" }} />
+      <div className="aurora-field" style={{ width: 420, height: 420, top: "40%", left: "-6%", background: "radial-gradient(circle, rgba(217,70,239,0.07) 0%, transparent 65%)", animationDelay: "-23s" }} />
+
+      {/* Fine technical grid */}
+      <div className="tech-grid" />
+
+      {/* Drifting micro-dots */}
+      <div className="micro-dots">
+        {dots.map((d, i) => (
+          <span key={i} className="micro-dot" style={{ top: d.top, left: d.left, animationDelay: d.delay }} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -124,6 +168,8 @@ function MetricCard({ icon, value, label, accent, delay = 0 }: MetricProps) {
 // ─── MAIN PAGE ────────────────────────────────────────────────
 export function Landing({ onNavigate }: LandingProps) {
   const { candidates, candidatesLoading, health, error, dismissError, startInterview } = useInterview();
+  const rootRef = useRef<HTMLDivElement>(null);
+  useReveal(rootRef, [candidatesLoading]);
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "strong" | "developing">("all");
@@ -131,6 +177,7 @@ export function Landing({ onNavigate }: LandingProps) {
   const [dossierCandidate, setDossierCandidate] = useState<CandidateSummary | null>(null);
 
   const curriculumDaysTotal = health?.curriculumDays || 31;
+  const realCandidateCount = health?.candidates ?? candidates.length;
 
   const filteredCandidates = useMemo(() => {
     let list = candidates.filter(c => {
@@ -160,100 +207,99 @@ export function Landing({ onNavigate }: LandingProps) {
   };
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden" style={{ background: "#07090f" }}>
-
-      {/* Grain overlay */}
+    <div ref={rootRef} className="relative min-h-screen overflow-x-hidden" style={{ background: "var(--ink-900)" }}>
+      <Backdrop />
       <div className="grain-overlay" />
-
-      {/* Global atmospheric orbs */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>
-        <div className="bg-orb bg-orb-indigo animate-orb-drift"
-          style={{ width: 600, height: 600, top: "-15%", left: "-8%", opacity: 0.12 }} />
-        <div className="bg-orb bg-orb-cyan animate-orb-drift"
-          style={{ width: 500, height: 500, top: "30%", right: "-10%", opacity: 0.09, animationDelay: "-7s" }} />
-        <div className="bg-orb bg-orb-violet animate-orb-drift"
-          style={{ width: 400, height: 400, bottom: "5%", left: "35%", opacity: 0.07, animationDelay: "-14s" }} />
-      </div>
 
       {/* Navigation */}
       <Navigation />
 
       {/* ── HERO ─────────────────────────────────────────────── */}
       <section
-        className="relative overflow-hidden mx-5 mt-2 mb-8 rounded-[24px]"
+        id="top"
+        className="relative overflow-hidden mx-5 mt-2 mb-8 rounded-[var(--radius-xl)] reveal revealed"
         style={{
-          background: "linear-gradient(160deg, #0c1020 0%, #090d18 60%, #0a0f1a 100%)",
-          border: "1px solid rgba(255,255,255,0.055)",
-          minHeight: "340px",
+          background: "linear-gradient(165deg, var(--ink-800) 0%, var(--ink-900) 60%, var(--ink-850) 100%)",
+          border: "1px solid rgba(255,255,255,0.07)",
+          minHeight: "360px",
+          boxShadow: "var(--shadow-2)",
         }}
       >
         {/* Journey art in the background */}
-        <div className="absolute inset-0 pointer-events-none" style={{ opacity: 1 }}>
+        <div className="absolute inset-0 pointer-events-none" style={{ opacity: 0.9 }}>
           <HeroJourneyArt />
         </div>
 
         {/* Ambient color wash */}
         <div className="absolute inset-0 pointer-events-none" style={{
-          background: "radial-gradient(ellipse 60% 80% at 0% 50%, rgba(99,102,241,0.10) 0%, transparent 60%)",
+          background: "radial-gradient(ellipse 60% 80% at 0% 50%, rgba(124,92,255,0.12) 0%, transparent 60%)",
         }} />
         <div className="absolute inset-0 pointer-events-none" style={{
-          background: "radial-gradient(ellipse 50% 60% at 100% 30%, rgba(6,182,212,0.08) 0%, transparent 60%)",
+          background: "radial-gradient(ellipse 50% 60% at 100% 30%, rgba(34,211,238,0.08) 0%, transparent 60%)",
         }} />
 
         {/* Content */}
         <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-10 px-10 py-12">
           {/* Headline block */}
-          <div className="max-w-[560px] animate-fade-up">
+          <div className="max-w-[600px] animate-fade-up">
             {/* Eyebrow label */}
             <div
-              className="inline-flex items-center gap-2 px-3 py-1 rounded-full mb-5 text-[10px] font-bold uppercase tracking-[0.2em]"
+              className="inline-flex items-center gap-2 px-3 py-1 rounded-full mb-6 text-[10px] font-bold uppercase tracking-[0.2em]"
               style={{
-                background: "rgba(99,102,241,0.12)",
-                border: "1px solid rgba(99,102,241,0.25)",
-                color: "#a78bfa",
+                background: "rgba(124,92,255,0.12)",
+                border: "1px solid rgba(124,92,255,0.28)",
+                color: "#b3a6ff",
               }}
             >
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ background: "#a78bfa", boxShadow: "0 0 6px #a78bfa" }}
-              />
-              ABTalks AI Engineering Cohort · 31 Days
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#7c5cff", boxShadow: "0 0 6px #7c5cff" }} />
+              ABTalks AI Engineering Cohort
             </div>
 
             <h1
-              className="text-white mb-4"
-              style={{ fontSize: "clamp(32px, 4vw, 52px)", fontWeight: 800, lineHeight: 1.08, letterSpacing: "-0.03em" }}
+              className="text-white mb-5"
+              style={{ fontSize: "clamp(34px, 4.2vw, 58px)", fontWeight: 800, lineHeight: 1.05, letterSpacing: "-0.03em" }}
             >
               Find the right candidate.
               <br />
               <span
-                className="font-serif italic"
-                style={{
-                  fontSize: "0.82em",
-                  fontWeight: 600,
-                  background: "linear-gradient(135deg, #818cf8 0%, #a78bfa 40%, #22d3ee 100%)",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                  backgroundClip: "text",
-                }}
+                className="text-display-italic text-gradient-ivory"
+                style={{ fontSize: "0.9em" }}
               >
                 The interview already knows their journey.
               </span>
             </h1>
 
-            <p className="text-slate-400 text-[14px] leading-relaxed max-w-[440px]">
-              Select a candidate — the AI interviewer adapts every question
-              to what they actually built, skipped, struggled with, and mastered
-              across the cohort.
+            <p className="text-slate-400 text-[14.5px] leading-relaxed max-w-[470px]">
+              Every question is grounded in what each candidate actually built,
+              skipped, struggled with, and mastered across the 31-day cohort —
+              delivered by an interviewer that adapts in real time.
             </p>
+
+            {/* CTA row */}
+            <div className="flex flex-wrap items-center gap-3 mt-7">
+              <a href="#candidates" className="btn btn-primary">
+                Start an Interview
+                <ArrowRight className="w-4 h-4" />
+              </a>
+              <a href="#how-it-works" className="btn btn-secondary">
+                <Compass className="w-4 h-4" />
+                How it works
+              </a>
+            </div>
+
+            {/* Integrity line */}
+            <div className="flex items-center gap-2 mt-5 text-[11px] text-slate-500">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400/80" />
+              Assessment integrity protection active
+            </div>
           </div>
 
-          {/* Metrics — staggered entrance */}
-          <div className="flex flex-wrap lg:flex-nowrap items-start gap-3 shrink-0">
-            <MetricCard icon={<Users className="w-4 h-4" />}          value={String(candidates.length || 20)} label="Candidates"      accent="#a78bfa" delay={100} />
-            <MetricCard icon={<CalendarDays className="w-4 h-4" />}  value={String(curriculumDaysTotal)}       label="Curriculum Days" accent="#22d3ee" delay={175} />
-            <MetricCard icon={<MessageSquare className="w-4 h-4" />} value="8–14"                              label="Questions / Interview" accent="#fb7185" delay={250} />
-            <MetricCard icon={<Zap className="w-4 h-4" />}           value="<1s"                               label="First Reply"    accent="#fbbf24" delay={325} />
+          {/* Stats — staggered entrance with count-up */}
+          <div className="grid grid-cols-2 lg:flex lg:flex-wrap items-stretch gap-3 shrink-0 max-w-[340px] lg:max-w-none">
+            <StatCard icon={<Users className="w-4 h-4" />} value={realCandidateCount} label="Candidates" accent="#b3a6ff" delay={100} />
+            <StatCard icon={<CalendarDays className="w-4 h-4" />} value={curriculumDaysTotal} label="Curriculum Days" accent="#22d3ee" delay={175} />
+            <StatCard icon={<MessageSquare className="w-4 h-4" />} value={10} staticValue="8–10" label="Questions / Interview" accent="#fb7185" delay={250} />
+            <StatCard icon={<Zap className="w-4 h-4" />} value={1} staticValue="<1s" label="First Reply" accent="#f59e0b" delay={325} />
           </div>
         </div>
       </section>
@@ -267,28 +313,19 @@ export function Landing({ onNavigate }: LandingProps) {
         )}
 
         {/* ── FILTERS & TOOLBAR ────────────────────────────── */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-3 mb-6 animate-fade-up" style={{ animationDelay: "200ms" }}>
+        <div className="flex flex-col md:flex-row items-center justify-between gap-3 mb-6 animate-fade-up reveal" style={{ animationDelay: "200ms" }}>
           {/* Filter tabs */}
           <div
             className="flex items-center gap-1 p-1 rounded-[12px]"
             style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
           >
-            <button
-              onClick={() => setFilter("all")}
-              className={`filter-tab ${filter === "all" ? "active-all" : ""}`}
-            >
+            <button onClick={() => setFilter("all")} className={`filter-tab ${filter === "all" ? "active-all" : ""}`}>
               All Candidates
             </button>
-            <button
-              onClick={() => setFilter("strong")}
-              className={`filter-tab ${filter === "strong" ? "active-strong" : ""}`}
-            >
+            <button onClick={() => setFilter("strong")} className={`filter-tab ${filter === "strong" ? "active-strong" : ""}`}>
               Interview Ready
             </button>
-            <button
-              onClick={() => setFilter("developing")}
-              className={`filter-tab ${filter === "developing" ? "active-needs" : ""}`}
-            >
+            <button onClick={() => setFilter("developing")} className={`filter-tab ${filter === "developing" ? "active-needs" : ""}`}>
               Needs Practice
             </button>
           </div>
@@ -297,7 +334,7 @@ export function Landing({ onNavigate }: LandingProps) {
           <div className="flex items-center gap-2.5">
             {/* Sort dropdown */}
             <label
-              className="relative flex items-center gap-2 px-3 py-2 rounded-[10px] text-[12px] font-medium text-slate-400 cursor-pointer"
+              className="relative flex items-center gap-2 px-3 py-2 rounded-[10px] text-[12px] font-medium text-slate-400 cursor-pointer transition-colors"
               style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
             >
               <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -326,14 +363,15 @@ export function Landing({ onNavigate }: LandingProps) {
                   background: "rgba(255,255,255,0.04)",
                   border: "1px solid rgba(255,255,255,0.06)",
                 }}
-                onFocus={e => { e.currentTarget.style.borderColor = "rgba(99,102,241,0.5)"; e.currentTarget.style.background = "rgba(99,102,241,0.06)"; }}
-                onBlur={e  => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+                onFocus={e => { e.currentTarget.style.borderColor = "rgba(124,92,255,0.5)"; e.currentTarget.style.background = "rgba(124,92,255,0.06)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(124,92,255,0.12)"; }}
+                onBlur={e  => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.boxShadow = "none"; }}
               />
             </div>
 
             {/* Grid toggle */}
             <button
-              className="p-2 rounded-[10px] text-white"
+              aria-label="Grid view"
+              className="p-2 rounded-[10px] text-white transition-all hover:-translate-y-0.5"
               style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.08)" }}
             >
               <LayoutGrid className="w-4 h-4" />
@@ -350,34 +388,39 @@ export function Landing({ onNavigate }: LandingProps) {
         {candidatesLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[...Array(9)].map((_, i) => (
-              <div
-                key={i}
-                className="rounded-[20px] animate-pulse"
-                style={{ height: "540px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.04)" }}
-              />
+              <div key={i} className="skeleton" style={{ height: "540px" }} />
             ))}
           </div>
         ) : filteredCandidates.length === 0 ? (
           <div
-            className="text-center py-24 rounded-[20px]"
-            style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}
+            className="text-center py-24 rounded-[var(--card-radius)]"
+            style={{ background: "rgba(255,255,255,0.02)", border: "1px dashed rgba(255,255,255,0.10)" }}
           >
-            <p className="text-slate-500 text-[15px]">No candidates match your criteria.</p>
-            <button onClick={() => { setSearch(""); setFilter("all"); }} className="mt-4 text-indigo-400 text-sm underline">
+            <div className="mx-auto w-14 h-14 rounded-2xl flex items-center justify-center mb-5"
+              style={{ background: "rgba(124,92,255,0.10)", border: "1px solid rgba(124,92,255,0.25)" }}>
+              <Search className="w-6 h-6 text-[#b3a6ff]" />
+            </div>
+            <p className="text-slate-400 text-[15px] font-semibold">No candidates match your criteria.</p>
+            <p className="text-slate-600 text-[12.5px] mt-1.5">Try adjusting the search or filter to see more of the cohort.</p>
+            <button
+              onClick={() => { setSearch(""); setFilter("all"); }}
+              className="btn btn-secondary mt-6"
+            >
               Clear filters
             </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-24" id="candidates">
             {filteredCandidates.map((candidate, i) => (
-              <CandidateCard3D
-                key={candidate.id}
-                candidate={candidate}
-                curriculumDaysTotal={curriculumDaysTotal}
-                onStartInterview={handleStart}
-                onViewDossier={handleDossier}
-                animationDelay={Math.min(i * 60, 500)}
-              />
+              <div key={candidate.id} className={`reveal reveal-delay-${Math.min(i, 4)}`}>
+                <CandidateCard3D
+                  candidate={candidate}
+                  curriculumDaysTotal={curriculumDaysTotal}
+                  onStartInterview={handleStart}
+                  onViewDossier={handleDossier}
+                  animationDelay={Math.min(i * 60, 500)}
+                />
+              </div>
             ))}
           </div>
         )}

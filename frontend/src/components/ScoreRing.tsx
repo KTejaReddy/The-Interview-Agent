@@ -6,10 +6,10 @@ interface ScoreRingProps {
 }
 
 function scoreTone(score: number): string {
-  if (score >= 85) return "#00F0FF"; // accent-cyan
-  if (score >= 70) return "#A07CFE"; // accent-purple
-  if (score >= 50) return "#F59E0B"; // amber-500
-  return "#F26457"; // coral (red)
+  if (score >= 85) return "#22d3ee"; // cyan — exceptional
+  if (score >= 70) return "#9d8cff"; // electric violet — strong
+  if (score >= 50) return "#f59e0b"; // amber — developing
+  return "#fb7185"; // coral — needs practice
 }
 
 export function ScoreRing({ score, size = 120 }: ScoreRingProps) {

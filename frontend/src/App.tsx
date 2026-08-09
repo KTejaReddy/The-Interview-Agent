@@ -22,14 +22,19 @@ function AppShell() {
     window.scrollTo({ top: 0 });
   };
 
-  switch (page) {
-    case "interview":
-      return <Interview onNavigate={navigate} />;
-    case "feedback":
-      return <Feedback onNavigate={navigate} />;
-    default:
-      return <Landing onNavigate={navigate} />;
-  }
+  // Subtle cross-fade + rise when switching major application states.
+  const pageEl =
+    page === "interview"
+      ? <Interview onNavigate={navigate} />
+      : page === "feedback"
+        ? <Feedback onNavigate={navigate} />
+        : <Landing onNavigate={navigate} />;
+
+  return (
+    <div key={page} className="animate-fade-up" style={{ animationDuration: "0.38s" }}>
+      {pageEl}
+    </div>
+  );
 }
 
 export default function App() {

@@ -10,8 +10,8 @@ export function Brand({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
       <div
         className={`relative flex shrink-0 items-center justify-center rounded-[10px] ${isLg ? "w-10 h-10" : isSm ? "w-7 h-7" : "w-8 h-8"}`}
         style={{
-          background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 60%, #a78bfa 100%)",
-          boxShadow: "0 4px 16px -4px rgba(99,102,241,0.6), inset 0 1px 0 rgba(255,255,255,0.15)",
+          background: "linear-gradient(135deg, #7c5cff 0%, #6366f1 55%, #22d3ee 100%)",
+          boxShadow: "0 4px 16px -4px rgba(124,92,255,0.6), inset 0 1px 0 rgba(255,255,255,0.15)",
         }}
       >
         <Brain
@@ -32,7 +32,7 @@ export function Brand({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
         </p>
         {!isSm && (
           <p className="text-[9px] font-semibold uppercase tracking-[0.18em] mt-0.5"
-            style={{ color: "rgba(167,139,250,0.8)" }}>
+            style={{ color: "rgba(179,166,255,0.85)" }}>
             AI Technical Assessment
           </p>
         )}
