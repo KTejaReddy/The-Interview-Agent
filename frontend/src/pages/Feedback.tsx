@@ -37,8 +37,8 @@ export function Feedback({ onNavigate }: FeedbackProps) {
     <div className="relative min-h-screen bg-background pb-32 text-gray-200">
       
       {/* Background Atmosphere */}
-      <div className="bg-orb-1 top-[-10%] left-[-10%] w-[600px] h-[600px]" />
-      <div className="bg-orb-2 top-[30%] right-[-10%] w-[600px] h-[600px]" />
+      <div className="absolute bg-orb-1 top-[-10%] left-[-10%] w-[600px] h-[600px] pointer-events-none" />
+      <div className="absolute bg-orb-2 top-[30%] right-[-10%] w-[600px] h-[600px] pointer-events-none" />
 
       {/* Header */}
       <header className="relative z-20 border-b border-white/5 bg-surface-50/80 backdrop-blur-md sticky top-0 py-4">

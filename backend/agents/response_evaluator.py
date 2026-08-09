@@ -120,7 +120,7 @@ class ResponseEvaluator:
         """
         if detects_idk(answer):
             return EvaluationDraft(
-                score=2,
+                score=0,
                 verdict="weak",
                 follow_up="simplify",
                 mastered_topic=False,
@@ -151,7 +151,7 @@ class ResponseEvaluator:
             )
         if any(pattern.match(answer) for pattern in _WEAK_ANSWER_PATTERNS):
             return EvaluationDraft(
-                score=2,
+                score=0,
                 verdict="weak",
                 follow_up="simplify",
                 mastered_topic=False,

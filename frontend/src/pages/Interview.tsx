@@ -34,6 +34,8 @@ export function Interview({ onNavigate }: InterviewProps) {
     error,
     sendMessage,
     dismissError,
+    candidateId,
+    candidates,
   } = useInterview();
 
   const [draft, setDraft] = useState("");
@@ -83,12 +85,16 @@ export function Interview({ onNavigate }: InterviewProps) {
   const idkCount = messages.filter(m => m.role === 'candidate' && m.text.toLowerCase().includes("don't know")).length;
   if (idkCount > 1 && interviewerTyping) interviewerState = 'frustrated';
 
+  const activeCandidate = candidates.find(c => c.id === candidateId);
+  const candidateName = activeCandidate?.name || "Candidate";
+  const candidateRole = activeCandidate?.role || "Your Profile";
+
   return (
     <div className={`flex h-screen flex-col bg-background relative overflow-hidden font-sans text-gray-200 ${!interviewComplete && state !== 'DONE' ? 'interview-locked-content' : ''}`}>
       
       {/* Background Atmosphere */}
-      <div className="bg-orb-1 top-[10%] left-[-10%] w-[800px] h-[800px]" />
-      <div className="bg-orb-2 bottom-[20%] right-[-10%] w-[600px] h-[600px]" />
+      <div className="absolute bg-orb-1 top-[10%] left-[-10%] w-[800px] h-[800px] pointer-events-none" />
+      <div className="absolute bg-orb-2 bottom-[20%] right-[-10%] w-[600px] h-[600px] pointer-events-none" />
 
       {/* Header */}
       <header className="relative z-20 border-b border-white/5 bg-surface-50/80 backdrop-blur-xl">
@@ -134,15 +140,15 @@ export function Interview({ onNavigate }: InterviewProps) {
           </div>
 
           {/* Candidate */}
-          <div className="glass-card rounded-2xl p-5 border border-white/5">
-            <h4 className="text-[10px] font-bold uppercase tracking-widest text-base-500 mb-4 border-b border-white/5 pb-2">Candidate</h4>
+          <div className="glass-card-intense rounded-2xl p-5 border border-white/10 shadow-glow-cyan/20">
+            <h4 className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 mb-4 border-b border-white/10 pb-2">Candidate</h4>
             <div className="flex items-center gap-4 mb-4">
-              <div className="w-12 h-12 bg-surface-200/50 rounded-full border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
-                <RealisticAvatar name="Candidate" />
+              <div className="w-12 h-12 bg-surface-200/50 rounded-full border border-cyan-400/30 flex items-center justify-center overflow-hidden shrink-0 shadow-glow-cyan">
+                <RealisticAvatar name={candidateName} />
               </div>
               <div>
-                <p className="font-bold text-white text-sm">Your Profile</p>
-                <p className="text-[9px] font-bold text-mint-400 uppercase mt-0.5 tracking-widest">In Progress</p>
+                <p className="font-bold text-white text-sm">{candidateName}</p>
+                <p className="text-[9px] font-bold text-mint-400 uppercase mt-0.5 tracking-widest">{candidateRole}</p>
               </div>
             </div>
           </div>
@@ -242,7 +248,7 @@ export function Interview({ onNavigate }: InterviewProps) {
                   <button
                     type="submit"
                     disabled={!canSend || !draft.trim()}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-600 text-white transition-all hover:bg-accent-500 active:scale-95 disabled:opacity-30 shadow-lg shadow-accent-600/20"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-premium-gradient text-white transition-all hover:scale-105 active:scale-95 disabled:opacity-30 shadow-glow-accent shadow-accent-600/40"
                   >
                     <Send className="w-4 h-4" />
                   </button>

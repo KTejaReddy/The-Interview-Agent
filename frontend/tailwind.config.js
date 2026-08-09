@@ -56,8 +56,14 @@ export default {
         mono:  ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "monospace"],
       },
       backgroundImage: {
-        "premium-gradient": "linear-gradient(135deg, #4f46e5 0%, #a78bfa 100%)",
-        "glass-gradient":   "linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.01) 100%)",
+        "premium-gradient": "linear-gradient(135deg, #0ea5e9 0%, #d946ef 50%, #8b5cf6 100%)",
+        "glass-gradient":   "linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%)",
+        "card-gradient":    "linear-gradient(160deg, rgba(16, 20, 31, 0.9) 0%, rgba(10, 13, 22, 0.95) 100%)",
+      },
+      boxShadow: {
+        'glow-accent': '0 0 25px -5px rgba(99, 102, 241, 0.4), 0 0 10px -2px rgba(99, 102, 241, 0.2)',
+        'glow-magenta': '0 0 25px -5px rgba(217, 70, 239, 0.4), 0 0 10px -2px rgba(217, 70, 239, 0.2)',
+        'glow-cyan': '0 0 25px -5px rgba(14, 165, 233, 0.4), 0 0 10px -2px rgba(14, 165, 233, 0.2)',
       },
       keyframes: {
         "fade-up": {

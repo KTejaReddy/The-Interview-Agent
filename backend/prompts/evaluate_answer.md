@@ -40,11 +40,11 @@ BEHAVIOUR
   "simplify" — one short, simpler recovery question is enough.
 - Bare knowledge claim ("I know", "yes", "of course") with NO substance is
   NOT evidence: score at most 5, verdict "unclear", follow_up "verify".
-- "I don't know" or similar: verdict "weak", follow_up "simplify".
+- "I don't know" or completely wrong answer: assign a `score` of 0, verdict "wrong" or "weak", and follow_up "simplify" or "recovery".
 - Already failed this concept once: prefer "next_topic" unless the new
   answer shows real substance — do not keep asking about a concept the
   candidate cannot answer.
-- Wrong answer: "recovery" — a scaffolding question on the same concept.
+- Wrong answer: "recovery" — a scaffolding question on the same concept. Assign a `score` of 0.
 - Correct but shallow: prefer "next_topic", or "deeper" only when the concept
   is central.
 - Vague or rambling: "probe" for clarification.
