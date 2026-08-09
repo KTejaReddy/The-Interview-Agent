@@ -319,3 +319,22 @@
   transform: translateY(-2px);
   background: rgba(255,255,255,0.05);
 }
+
+/* --- INTERVIEW LOCK MODE ----------------------------------- */
+.interview-locked-content {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.interview-locked-content input,
+.interview-locked-content textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+@media print {
+  .interview-locked-content {
+    display: none !important;
+  }
+}
+

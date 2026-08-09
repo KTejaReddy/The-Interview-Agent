@@ -11,6 +11,8 @@ import { useInterview } from "../context/InterviewContext";
 import { useAutoScroll } from "../hooks/useAutoScroll";
 import type { Page } from "../types";
 import { Send } from "lucide-react";
+import { SecurityIndicator } from "../components/SecurityIndicator";
+import { useInterviewSecurity } from "../security/useInterviewSecurity";
 
 interface InterviewProps {
   onNavigate: (page: Page) => void;
@@ -35,8 +37,17 @@ export function Interview({ onNavigate }: InterviewProps) {
   } = useInterview();
 
   const [draft, setDraft] = useState("");
+  const [warningMsg, setWarningMsg] = useState("");
   const transcriptRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useInterviewSecurity({
+    enabled: !interviewComplete && state !== "DONE",
+    onWarning: (msg) => {
+      setWarningMsg(msg);
+      setTimeout(() => setWarningMsg(""), 6000);
+    }
+  });
 
   useAutoScroll(transcriptRef, [messages.length, interviewerTyping]);
 
@@ -73,7 +84,7 @@ export function Interview({ onNavigate }: InterviewProps) {
   if (idkCount > 1 && interviewerTyping) interviewerState = 'frustrated';
 
   return (
-    <div className="flex h-screen flex-col bg-background relative overflow-hidden font-sans text-gray-200">
+    <div className={`flex h-screen flex-col bg-background relative overflow-hidden font-sans text-gray-200 ${!interviewComplete && state !== 'DONE' ? 'interview-locked-content' : ''}`}>
       
       {/* Background Atmosphere */}
       <div className="bg-orb-1 top-[10%] left-[-10%] w-[800px] h-[800px]" />
@@ -101,6 +112,7 @@ export function Interview({ onNavigate }: InterviewProps) {
           </div>
           
           <div className="flex items-center gap-4">
+            {!interviewComplete && state !== "DONE" && <SecurityIndicator />}
             <SessionIndicator sessionId={sessionId} state={state} />
           </div>
         </div>
@@ -146,6 +158,14 @@ export function Interview({ onNavigate }: InterviewProps) {
               {error && (
                 <div className="sticky top-0 z-30 mb-8">
                   <ErrorBanner message={error} onDismiss={dismissError} />
+                </div>
+              )}
+
+              {warningMsg && (
+                <div className="sticky top-0 z-30 mb-4 mx-auto w-fit">
+                  <div className="bg-amber-500/10 border border-amber-500/30 text-amber-200 px-4 py-2 rounded-lg backdrop-blur-md shadow-lg text-sm font-medium">
+                    {warningMsg}
+                  </div>
                 </div>
               )}
 
