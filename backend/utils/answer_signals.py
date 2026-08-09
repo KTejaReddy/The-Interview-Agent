@@ -23,8 +23,8 @@ import re
 #: Phrases indicating the candidate did not attempt an answer.
 _IDK_PATTERNS = (
     re.compile(r"\b(i'?m\s+)?not\s+(?:really\s+)?sure\b", re.I),
-    re.compile(r"\bi\s+don'?t\s+know\b", re.I),
-    re.compile(r"\bi\s+do\s+not\s+know\b", re.I),
+    re.compile(r"\b(?:i\s+)?don'?t\s+know\b", re.I),
+    re.compile(r"\b(?:i\s+)?do\s+not\s+know\b", re.I),
     re.compile(r"\bno\s+idea\b", re.I),
     re.compile(r"\bno\s+clue\b", re.I),
     re.compile(r"\bcan'?t\s+(?:really\s+)?(?:recall|remember)\b", re.I),

@@ -144,7 +144,7 @@ export function Interview({ onNavigate }: InterviewProps) {
             <h4 className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 mb-4 border-b border-white/10 pb-2">Candidate</h4>
             <div className="flex items-center gap-4 mb-4">
               <div className="w-12 h-12 bg-surface-200/50 rounded-full border border-cyan-400/30 flex items-center justify-center overflow-hidden shrink-0 shadow-glow-cyan">
-                <RealisticAvatar name={candidateName} />
+                <RealisticAvatar name={candidateName} id={candidateId} />
               </div>
               <div>
                 <p className="font-bold text-white text-sm">{candidateName}</p>

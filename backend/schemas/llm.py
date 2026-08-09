@@ -119,6 +119,6 @@ class FeedbackResult(BaseModel):
             "gaps": list(self.gaps),
             "next": list(self.next),
         }
-        if self.score:
+        if self.score is not None:
             payload["score"] = self.score
         return payload

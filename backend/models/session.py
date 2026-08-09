@@ -57,6 +57,24 @@ class InterviewSession:
     def touch(self) -> None:
         self.updated_at = _now()
 
+    def snapshot(self) -> dict:
+        data = {
+            "session_id": self.session_id,
+            "state": self.state.value,
+            "current_question_index": self.current_question_index,
+            "plan": [q.to_dict() for q in self.plan.questions],
+        }
+        if self.feedback:
+            # We now expose the score field to the frontend.
+            data["feedback"] = {
+                "summary": self.feedback.summary,
+                "strengths": self.feedback.strengths,
+                "gaps": self.feedback.gaps,
+                "next": self.feedback.next,
+                "score": self.feedback.score,
+            }
+        return data
+
     @property
     def state(self) -> InterviewState:
         return self.state_machine.current
