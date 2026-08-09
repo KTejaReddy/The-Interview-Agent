@@ -16,9 +16,6 @@ export function Navigation() {
       {/* Center links */}
       <div className="hidden lg:flex flex-1 items-center justify-center gap-8">
         <a href="#candidates" className="nav-link active">Candidates</a>
-        <a href="#how-it-works" className="nav-link">How it works</a>
-        <a href="#reports" className="nav-link">Reports</a>
-        <a href="#about" className="nav-link">About</a>
       </div>
 
       {/* Right side */}

@@ -8,9 +8,8 @@ import { CandidateDrawer } from "../components/CandidateDrawer";
 import { useCountUp } from "../hooks/useCountUp";
 import { useReveal } from "../hooks/useReveal";
 import {
-  Search, Users, CalendarDays, MessageSquare, Zap,
-  SlidersHorizontal, LayoutGrid, ChevronDown, ArrowRight,
-  Compass, ShieldCheck,
+  Users, CalendarDays, MessageSquare, Zap,
+  LayoutGrid, ArrowRight, ShieldCheck,
 } from "lucide-react";
 
 interface LandingProps {
@@ -171,30 +170,14 @@ export function Landing({ onNavigate }: LandingProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   useReveal(rootRef, [candidatesLoading]);
 
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "strong" | "developing">("all");
-  const [sortBy, setSortBy]   = useState<"readiness" | "name" | "missions">("readiness");
   const [dossierCandidate, setDossierCandidate] = useState<CandidateSummary | null>(null);
 
   const curriculumDaysTotal = health?.curriculumDays || 31;
   const realCandidateCount = health?.candidates ?? candidates.length;
 
   const filteredCandidates = useMemo(() => {
-    let list = candidates.filter(c => {
-      const q = search.toLowerCase();
-      if (q && !c.name.toLowerCase().includes(q) && !c.role.toLowerCase().includes(q)) return false;
-      const r = c.missionsCompleted ? (c.missionsCompleted / curriculumDaysTotal) * 100 : 0;
-      if (filter === "strong"    && r < 70)  return false;
-      if (filter === "developing" && r >= 70) return false;
-      return true;
-    });
-    if (sortBy === "readiness" || sortBy === "missions") {
-      list = [...list].sort((a, b) => (b.missionsCompleted ?? 0) - (a.missionsCompleted ?? 0));
-    } else {
-      list = [...list].sort((a, b) => a.name.localeCompare(b.name));
-    }
-    return list;
-  }, [candidates, search, filter, sortBy, curriculumDaysTotal]);
+    return [...candidates].sort((a, b) => (b.missionsCompleted ?? 0) - (a.missionsCompleted ?? 0));
+  }, [candidates]);
 
   const handleStart = async (id: string) => {
     setDossierCandidate(null);
@@ -281,10 +264,6 @@ export function Landing({ onNavigate }: LandingProps) {
                 Start an Interview
                 <ArrowRight className="w-4 h-4" />
               </a>
-              <a href="#how-it-works" className="btn btn-secondary">
-                <Compass className="w-4 h-4" />
-                How it works
-              </a>
             </div>
 
             {/* Integrity line */}
@@ -314,61 +293,13 @@ export function Landing({ onNavigate }: LandingProps) {
 
         {/* ── FILTERS & TOOLBAR ────────────────────────────── */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-3 mb-6 animate-fade-up reveal" style={{ animationDelay: "200ms" }}>
-          {/* Filter tabs */}
-          <div
-            className="flex items-center gap-1 p-1 rounded-[12px]"
-            style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
-          >
-            <button onClick={() => setFilter("all")} className={`filter-tab ${filter === "all" ? "active-all" : ""}`}>
-              All Candidates
-            </button>
-            <button onClick={() => setFilter("strong")} className={`filter-tab ${filter === "strong" ? "active-strong" : ""}`}>
-              Interview Ready
-            </button>
-            <button onClick={() => setFilter("developing")} className={`filter-tab ${filter === "developing" ? "active-needs" : ""}`}>
-              Needs Practice
-            </button>
+          {/* Title label instead of filters */}
+          <div>
+            <h2 className="text-xl font-bold text-white tracking-tight">ABTalks Engineering Cohort Candidates</h2>
           </div>
 
-          {/* Right controls */}
+          {/* Right controls - grid toggle only */}
           <div className="flex items-center gap-2.5">
-            {/* Sort dropdown */}
-            <label
-              className="relative flex items-center gap-2 px-3 py-2 rounded-[10px] text-[12px] font-medium text-slate-400 cursor-pointer transition-colors"
-              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <select
-                value={sortBy}
-                onChange={e => setSortBy(e.target.value as typeof sortBy)}
-                className="bg-transparent text-slate-300 font-semibold outline-none cursor-pointer appearance-none pr-4"
-              >
-                <option value="readiness">Sort: Readiness</option>
-                <option value="name">Sort: Name A–Z</option>
-                <option value="missions">Sort: Most Missions</option>
-              </select>
-              <ChevronDown className="w-3 h-3 absolute right-2 pointer-events-none" />
-            </label>
-
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600" />
-              <input
-                type="text"
-                placeholder="Search name or role…"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="w-52 pl-9 pr-3 py-2 rounded-[10px] text-[12px] text-white placeholder:text-slate-600 outline-none transition-all"
-                style={{
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.06)",
-                }}
-                onFocus={e => { e.currentTarget.style.borderColor = "rgba(124,92,255,0.5)"; e.currentTarget.style.background = "rgba(124,92,255,0.06)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(124,92,255,0.12)"; }}
-                onBlur={e  => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.boxShadow = "none"; }}
-              />
-            </div>
-
-            {/* Grid toggle */}
             <button
               aria-label="Grid view"
               className="p-2 rounded-[10px] text-white transition-all hover:-translate-y-0.5"
@@ -390,24 +321,6 @@ export function Landing({ onNavigate }: LandingProps) {
             {[...Array(9)].map((_, i) => (
               <div key={i} className="skeleton" style={{ height: "540px" }} />
             ))}
-          </div>
-        ) : filteredCandidates.length === 0 ? (
-          <div
-            className="text-center py-24 rounded-[var(--card-radius)]"
-            style={{ background: "rgba(255,255,255,0.02)", border: "1px dashed rgba(255,255,255,0.10)" }}
-          >
-            <div className="mx-auto w-14 h-14 rounded-2xl flex items-center justify-center mb-5"
-              style={{ background: "rgba(124,92,255,0.10)", border: "1px solid rgba(124,92,255,0.25)" }}>
-              <Search className="w-6 h-6 text-[#b3a6ff]" />
-            </div>
-            <p className="text-slate-400 text-[15px] font-semibold">No candidates match your criteria.</p>
-            <p className="text-slate-600 text-[12.5px] mt-1.5">Try adjusting the search or filter to see more of the cohort.</p>
-            <button
-              onClick={() => { setSearch(""); setFilter("all"); }}
-              className="btn btn-secondary mt-6"
-            >
-              Clear filters
-            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-24" id="candidates">
